@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
@@ -592,6 +593,95 @@ func TestCheckBillingEligibility_SubscriptionMode_BypassesPlatformQuota(t *testi
 	if fake.called {
 		t.Error("GetUserPlatformQuotaCache must NOT be called in subscription mode (C-NEW-2)")
 	}
+}
+
+// exhaustiveSubscriptionCache 模拟 cache 命中且订阅月额度已用尽（MonthlyUsage >= limit），
+// 用于验证订阅额度用尽回退余额计费时 CheckBillingEligibility 改走余额资格检查。
+type exhaustiveSubscriptionCache struct {
+	BillingCache
+	balance      float64
+	quotaChecked bool
+}
+
+func (f *exhaustiveSubscriptionCache) GetSubscriptionCache(_ context.Context, _ int64, _ int64) (*SubscriptionCacheData, error) {
+	return &SubscriptionCacheData{
+		Status:       SubscriptionStatusActive,
+		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
+		DailyUsage:   0,
+		WeeklyUsage:  0,
+		MonthlyUsage: 200,
+	}, nil
+}
+
+func (f *exhaustiveSubscriptionCache) GetUserBalance(_ context.Context, _ int64) (float64, error) {
+	return f.balance, nil
+}
+
+func (f *exhaustiveSubscriptionCache) GetUserPlatformQuotaCache(_ context.Context, _ int64, _ string) (*UserPlatformQuotaCacheEntry, bool, error) {
+	f.quotaChecked = true
+	now := time.Now().UTC()
+	return &UserPlatformQuotaCacheEntry{
+		SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+		DailyWindowStart:   &now,
+		WeeklyWindowStart:  &now,
+		MonthlyWindowStart: &now,
+		// 三 limit 均 nil → 该用户无 platform 配额限制，检查放行
+	}, true, nil
+}
+
+func (f *exhaustiveSubscriptionCache) DeleteUserPlatformQuotaCache(_ context.Context, _ int64, _ string) error {
+	return nil
+}
+
+func (f *exhaustiveSubscriptionCache) SetUserPlatformQuotaCache(_ context.Context, _ int64, _ string, _ *UserPlatformQuotaCacheEntry, _ time.Duration) error {
+	return nil
+}
+
+// TestCheckBillingEligibility_SubscriptionQuotaExhausted_FallsBackToBalance 验证：
+// 订阅额度用尽且打了 SubscriptionQuotaExhausted 标记时，即使订阅用量已超限，
+// CheckBillingEligibility 也应按余额模式检查：余额充足则放行，余额耗尽则拒绝。
+func TestCheckBillingEligibility_SubscriptionQuotaExhausted_FallsBackToBalance(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Billing.UserPlatformQuotaCacheTTLSeconds = 60
+	subGroup := &Group{
+		ID:               10,
+		SubscriptionType: "subscription",
+		Status:           "active",
+		MonthlyLimitUSD:  f64p(200),
+	}
+	sub := &UserSubscription{Status: "active"}
+	user := &User{ID: 42}
+
+	t.Run("balance sufficient", func(t *testing.T) {
+		fake := &exhaustiveSubscriptionCache{balance: 100}
+		s := &BillingCacheService{
+			cache:                 fake,
+			cfg:                   cfg,
+			userPlatformQuotaRepo: &fakeQuotaRepo{},
+		}
+		ctx := context.WithValue(context.Background(), ctxkey.SubscriptionQuotaExhausted, true)
+		err := s.CheckBillingEligibility(ctx, user, nil, subGroup, sub, "anthropic")
+		if err != nil {
+			t.Errorf("quota-exhausted subscription with balance should pass balance check, got: %v", err)
+		}
+		if !fake.quotaChecked {
+			t.Error("fallback to balance mode should enforce user×platform quota check")
+		}
+	})
+
+	t.Run("balance exhausted", func(t *testing.T) {
+		fake := &exhaustiveSubscriptionCache{balance: 0}
+		s := &BillingCacheService{
+			cache:                 fake,
+			cfg:                   cfg,
+			userPlatformQuotaRepo: &fakeQuotaRepo{},
+		}
+		ctx := context.WithValue(context.Background(), ctxkey.SubscriptionQuotaExhausted, true)
+		err := s.CheckBillingEligibility(ctx, user, nil, subGroup, sub, "anthropic")
+		if !errors.Is(err, ErrInsufficientBalance) {
+			t.Errorf("quota-exhausted subscription without balance should be rejected, got: %v", err)
+		}
+	})
 }
 
 // TestCheckBillingEligibility_NonSubscriptionGroup_AppliesQuota 验证：

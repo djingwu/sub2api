@@ -81,4 +81,8 @@ const (
 
 	// ClaudeCodeVersion stores the extracted Claude Code version from User-Agent (e.g. "2.1.22")
 	ClaudeCodeVersion Key = "ctx_claude_code_version"
+
+	// SubscriptionQuotaExhausted 标识当前请求因订阅额度（日/周/月）用尽，
+	// 已回退为余额计费模式。由 API Key 认证中间件在订阅超限且余额充足时设置。
+	SubscriptionQuotaExhausted Key = "ctx_subscription_quota_exhausted"
 )

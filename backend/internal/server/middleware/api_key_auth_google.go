@@ -1,11 +1,13 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -188,14 +190,19 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				_, err = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 			}
 			if err != nil {
-				status := 403
-				if errors.Is(err, service.ErrDailyLimitExceeded) ||
-					errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-					errors.Is(err, service.ErrMonthlyLimitExceeded) {
-					status = 429
+				// 订阅额度用尽（日/周/月超限）且订阅本身仍有效：若用户余额充足则回退余额计费放行，
+				// 本请求标记后按余额模式扣费，不再累计订阅额度。
+				if isSubscriptionUsageLimitError(err) && !apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+					ctx := context.WithValue(c.Request.Context(), ctxkey.SubscriptionQuotaExhausted, true)
+					c.Request = c.Request.WithContext(ctx)
+				} else {
+					status := 403
+					if isSubscriptionUsageLimitError(err) {
+						status = 429
+					}
+					abortWithGoogleError(c, status, err.Error())
+					return
 				}
-				abortWithGoogleError(c, status, err.Error())
-				return
 			}
 
 			c.Set(string(ContextKeySubscription), subscription)

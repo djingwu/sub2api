@@ -247,16 +247,21 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					_, validateErr = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 				}
 				if validateErr != nil {
-					code := "SUBSCRIPTION_INVALID"
-					status := 403
-					if errors.Is(validateErr, service.ErrDailyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrWeeklyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
-						code = "USAGE_LIMIT_EXCEEDED"
-						status = 429
+					// 订阅额度用尽（日/周/月超限）且订阅本身仍有效：若用户余额充足则回退余额计费放行，
+					// 本请求标记后按余额模式扣费，不再累计订阅额度。
+					if isSubscriptionUsageLimitError(validateErr) && !apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+						ctx = context.WithValue(ctx, ctxkey.SubscriptionQuotaExhausted, true)
+						c.Request = c.Request.WithContext(ctx)
+					} else {
+						code := "SUBSCRIPTION_INVALID"
+						status := 403
+						if isSubscriptionUsageLimitError(validateErr) {
+							code = "USAGE_LIMIT_EXCEEDED"
+							status = 429
+						}
+						AbortWithError(c, status, code, validateErr.Error())
+						return
 					}
-					AbortWithError(c, status, code, validateErr.Error())
-					return
 				}
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
@@ -396,6 +401,13 @@ func setGroupContext(c *gin.Context, group *service.Group) {
 // 否则已配置该值的存量部署升级后，0 < balance < reserve 的用户会在所有端点被静默 403。
 func apiKeyBalanceBelowAuthThreshold(balance float64, _ *config.Config) bool {
 	return balance <= 0
+}
+
+// isSubscriptionUsageLimitError 报告错误是否为订阅日/周/月额度用尽（订阅本身仍有效）。
+func isSubscriptionUsageLimitError(err error) bool {
+	return errors.Is(err, service.ErrDailyLimitExceeded) ||
+		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+		errors.Is(err, service.ErrMonthlyLimitExceeded)
 }
 
 func abortIfAPIKeyGroupUnavailable(c *gin.Context, apiKey *service.APIKey) bool {

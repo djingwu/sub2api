@@ -129,6 +129,16 @@ func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
 	return p.Cost.TotalCost > 0 && p.Account.IsAPIKeyOrBedrock() && p.Account.HasAnyQuotaLimit()
 }
 
+// SubscriptionQuotaExhaustedFromContext 报告当前请求是否因订阅额度（日/周/月）用尽
+// 而回退为余额计费。由 API Key 认证中间件在订阅超限且用户余额充足时在请求 ctx 中设置。
+func SubscriptionQuotaExhaustedFromContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	exhausted, _ := ctx.Value(ctxkey.SubscriptionQuotaExhausted).(bool)
+	return exhausted
+}
+
 // postUsageBilling is the legacy fallback billing path used when the unified
 // billing repo is unavailable (nil). Production uses applyUsageBilling → repo.Apply
 // for atomic billing. This path only runs in tests or degraded mode.
@@ -862,7 +872,10 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 
 	// 判断计费方式：订阅模式 vs 余额模式
-	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	// 订阅额度用尽且回退余额计费时（SubscriptionQuotaExhaustedFromContext），
+	// 本请求按余额模式处理，不再累计订阅用量。
+	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() &&
+		!SubscriptionQuotaExhaustedFromContext(ctx)
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription
