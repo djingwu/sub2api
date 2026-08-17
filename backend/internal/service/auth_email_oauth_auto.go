@@ -60,7 +60,7 @@ func (s *AuthService) loginOrRegisterVerifiedEmailOAuth(
 	}
 
 	providerType := normalizeOAuthSignupSource(input.ProviderType)
-	if providerType != "github" && providerType != "google" && providerType != "oidc" {
+	if providerType != "github" && providerType != "google" && providerType != "oidc" && providerType != "dingtalk" {
 		return nil, nil, infraerrors.BadRequest("OAUTH_PROVIDER_INVALID", "oauth provider is invalid")
 	}
 	providerKey := strings.TrimSpace(input.ProviderKey)
@@ -155,7 +155,7 @@ func (s *AuthService) loginOrRegisterVerifiedEmailOAuth(
 }
 
 func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username, providerType, invitationCode, affiliateCode string) (*User, error) {
-	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
+	if s.settingService == nil || (!s.settingService.IsRegistrationEnabled(ctx) && !s.canBypassRegistrationDisabledForOAuth(ctx, providerType)) {
 		return nil, ErrRegDisabled
 	}
 	invitationRedeemCode, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode)

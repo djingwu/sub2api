@@ -459,6 +459,13 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 		return
 	}
 
+	// ─── Verified-email fast path：钉钉企业邮箱（internal_only 下经 OAPI 返回）视为已验证 ───
+	// 与 OIDC verified-email fast path 对齐：跳过 choice/pending 页，直接建号/登录并绑定 identity。
+	// 仅在注册未被拦截（bypass 生效）且上游已返回企业邮箱时触发。
+	if staff.Email != "" && h.tryDingTalkVerifiedEmailFastPath(c, frontendCallback, redirectTo, identityKey, staff, upstreamClaims) {
+		return
+	}
+
 	signupBlocked := h.isDingTalkSignupBlocked(c.Request.Context(), cfg)
 
 	// ─── 非命中：require_email=false 走 synthetic email 直接登录 ───
@@ -534,6 +541,81 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 
 func buildDingTalkSyntheticEmail(userID string) string {
 	return "dingtalk-" + strings.ToLower(strings.TrimSpace(userID)) + service.DingTalkConnectSyntheticEmailDomain
+}
+
+// tryDingTalkVerifiedEmailFastPath 在钉钉上游已返回企业邮箱（internal_only 下员工身份已由
+// OAPI 认证）时尝试跳过 choice/pending 页直接登录/建号并绑定 identity。
+// 返回 true 表示已写出响应（重定向或错误页）；返回 false 表示调用方应回退到常规流程。
+func (h *AuthHandler) tryDingTalkVerifiedEmailFastPath(
+	c *gin.Context,
+	frontendCallback string,
+	redirectTo string,
+	identity service.PendingAuthIdentityKey,
+	staff *DingTalkStaffInfo,
+	upstreamClaims map[string]any,
+) bool {
+	if h == nil || h.authService == nil || h.settingSvc == nil {
+		return false
+	}
+	ctx := c.Request.Context()
+	if h.isForceEmailOnThirdPartySignup(ctx) {
+		return false
+	}
+	if h.settingSvc.IsInvitationCodeEnabled(ctx) {
+		return false
+	}
+	if err := h.ensureBackendModeAllowsNewUserLogin(ctx); err != nil {
+		clearOAuthPendingSessionCookie(c, isRequestHTTPS(c))
+		clearOAuthPendingBrowserCookie(c, isRequestHTTPS(c))
+		redirectOAuthError(c, frontendCallback, "login_blocked", infraerrors.Reason(err), infraerrors.Message(err))
+		return true
+	}
+
+	verifiedEmail := strings.TrimSpace(strings.ToLower(staff.Email))
+	input := service.EmailOAuthIdentityInput{
+		ProviderType:     strings.TrimSpace(identity.ProviderType),
+		ProviderKey:      strings.TrimSpace(identity.ProviderKey),
+		ProviderSubject:  strings.TrimSpace(identity.ProviderSubject),
+		Email:            verifiedEmail,
+		EmailVerified:    true, // internal_only 下企业邮箱来自钉钉 OAPI，视为已验证
+		Username:         strings.TrimSpace(staff.Name),
+		DisplayName:      strings.TrimSpace(staff.Nickname),
+		UpstreamMetadata: upstreamClaims,
+	}
+	tokenPair, user, err := h.authService.LoginOrRegisterVerifiedEmailOAuthWithSignupCodes(
+		ctx,
+		input,
+		"",
+		"",
+		readOAuthPromoCode(c),
+	)
+	if err != nil {
+		slog.Debug("dingtalk verified-email fast path skipped",
+			"email", verifiedEmail, "reason", infraerrors.Reason(err))
+		return false
+	}
+
+	// 身份同步（企业邮箱/姓名/部门）：user_id 已知，异步执行避免阻塞登录跳转。
+	if user != nil && user.ID > 0 {
+		cfg, cfgErr := h.getDingTalkOAuthConfig(ctx)
+		if cfgErr == nil {
+			client := h.dingTalkClient(cfg)
+			runDingTalkSyncAsync(ctx, func(syncCtx context.Context) {
+				h.syncDingTalkIdentity(syncCtx, cfg, client, user.ID, staff, false)
+			})
+		}
+	}
+
+	fragment := url.Values{}
+	fragment.Set("access_token", tokenPair.AccessToken)
+	fragment.Set("refresh_token", tokenPair.RefreshToken)
+	fragment.Set("expires_in", fmt.Sprintf("%d", tokenPair.ExpiresIn))
+	fragment.Set("token_type", "Bearer")
+	fragment.Set("redirect", redirectTo)
+	clearOAuthPendingSessionCookie(c, isRequestHTTPS(c))
+	clearOAuthPendingBrowserCookie(c, isRequestHTTPS(c))
+	redirectWithFragment(c, frontendCallback, fragment)
+	return true
 }
 
 // isDingTalkSignupBlocked 当注册总开关关闭且未开启钉钉企业模式豁免
