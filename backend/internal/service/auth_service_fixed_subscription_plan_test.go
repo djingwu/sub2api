@@ -10,7 +10,6 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
@@ -19,9 +18,9 @@ import (
 )
 
 // newAuthServiceForFixedPlan builds an AuthService with a real ent client
-// (in-memory sqlite, shared with the user repository) and a stub subscription
-// assigner.
-func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, db *sql.DB, assigner *defaultSubscriptionAssignerStub) *AuthService {
+// (in-memory sqlite) and a stub subscription assigner. The user repository is
+// not exercised by the fixed-plan binding path, so nil is passed.
+func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, assigner *defaultSubscriptionAssignerStub) *AuthService {
 	t.Helper()
 
 	cfg := &config.Config{
@@ -37,7 +36,7 @@ func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, db *sql.DB, 
 
 	return NewAuthService(
 		client,
-		repository.NewUserRepository(client, db),
+		nil, // userRepo (not exercised by this path)
 		nil, // redeemRepo
 		nil, // refreshTokenCache
 		cfg,
@@ -52,23 +51,25 @@ func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, db *sql.DB, 
 	)
 }
 
-// newEntClientForFixedPlan opens an in-memory sqlite connection shared by the
-// ent client and the user repository, with all schemas migrated.
-func newEntClientForFixedPlan(t *testing.T) (*dbent.Client, *sql.DB) {
+// newEntClientForFixedPlan opens an in-memory sqlite ent client with all schemas migrated.
+func newEntClientForFixedPlan(t *testing.T) *dbent.Client {
 	t.Helper()
 
-	db, err := sql.Open("sqlite", "file:fixed_plan_ent?mode=memory&cache=shared")
+	db, err := sql.Open("sqlite", "file:fixed_plan_ent?mode=memory&cache=shared&_fk=1")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
 	t.Cleanup(func() { _ = client.Close() })
-	return client, db
+	return client
 }
 
 func TestBindFixedSubscriptionPlanToNewUser_BindsPlanFromDB(t *testing.T) {
-	client, db := newEntClientForFixedPlan(t)
+	client := newEntClientForFixedPlan(t)
 	ctx := context.Background()
 
 	group, err := client.Group.Create().
@@ -88,7 +89,7 @@ func TestBindFixedSubscriptionPlanToNewUser_BindsPlanFromDB(t *testing.T) {
 	require.NoError(t, err)
 
 	assigner := &defaultSubscriptionAssignerStub{}
-	svc := newAuthServiceForFixedPlan(t, client, db, assigner)
+	svc := newAuthServiceForFixedPlan(t, client, assigner)
 
 	svc.assignSubscriptions(ctx, 42, nil, "signup notes")
 
@@ -100,9 +101,9 @@ func TestBindFixedSubscriptionPlanToNewUser_BindsPlanFromDB(t *testing.T) {
 }
 
 func TestBindFixedSubscriptionPlanToNewUser_MissingPlanSkips(t *testing.T) {
-	client, db := newEntClientForFixedPlan(t)
+	client := newEntClientForFixedPlan(t)
 	assigner := &defaultSubscriptionAssignerStub{}
-	svc := newAuthServiceForFixedPlan(t, client, db, assigner)
+	svc := newAuthServiceForFixedPlan(t, client, assigner)
 
 	svc.assignSubscriptions(context.Background(), 42, nil, "signup notes")
 
@@ -110,7 +111,7 @@ func TestBindFixedSubscriptionPlanToNewUser_MissingPlanSkips(t *testing.T) {
 }
 
 func TestBindFixedSubscriptionPlanToNewUser_AssigneeErrorFailsOpen(t *testing.T) {
-	client, db := newEntClientForFixedPlan(t)
+	client := newEntClientForFixedPlan(t)
 	ctx := context.Background()
 
 	group, err := client.Group.Create().
@@ -129,7 +130,7 @@ func TestBindFixedSubscriptionPlanToNewUser_AssigneeErrorFailsOpen(t *testing.T)
 	require.NoError(t, err)
 
 	assigner := &defaultSubscriptionAssignerStub{err: ErrGroupNotSubscriptionType}
-	svc := newAuthServiceForFixedPlan(t, client, db, assigner)
+	svc := newAuthServiceForFixedPlan(t, client, assigner)
 
 	require.NotPanics(t, func() {
 		svc.assignSubscriptions(ctx, 42, nil, "signup notes")
