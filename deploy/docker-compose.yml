@@ -136,6 +136,9 @@ services:
       - ANTIGRAVITY_OAUTH_CLIENT_SECRET=${ANTIGRAVITY_OAUTH_CLIENT_SECRET:-}
       - ANTIGRAVITY_USER_AGENT_VERSION=${ANTIGRAVITY_USER_AGENT_VERSION:-}
 
+      # DingTalk require_email 关闭（无邮箱的钉钉用户用合成邮箱自动登录，登录后可在个人资料修改）
+      - DINGTALK_CONNECT_REQUIRE_EMAIL=false
+
       # =======================================================================
       # Security Configuration (URL Allowlist)
       # =======================================================================
