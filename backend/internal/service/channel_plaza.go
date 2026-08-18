@@ -61,8 +61,15 @@ type PlazaGroup struct {
 //   - 只返回 Models 非空的分组；分组按 RateMultiplier 升序（同倍率按名称），
 //     组内模型按名称排序。
 //
+// 模型范围 = 分组关联账号支持的模型（账号 credentials.model_mapping 的键，仅统计
+// active+schedulable 账号）∩ 渠道已配置定价的模型，保证广场只展示账号真正能用的
+// 模型；accountRepo 为 nil 或分组无账号配置映射时回退为渠道模型清单。
+//
+// modelWhitelist 是模型白名单（前缀，大小写不敏感）；为空时展示上述全部模型，
+// 非空时仅展示命中白名单前缀的模型（用于"只卖指定系列"的运营场景）。
+//
 // 可见性过滤（专属分组）不在此层做，由 handler 按登录态裁剪。
-func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, error) {
+func (s *ChannelService) ListPlazaGroups(ctx context.Context, modelWhitelist []string) ([]PlazaGroup, error) {
 	channels, err := s.repo.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
@@ -70,6 +77,22 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 	groups, err := s.groupRepo.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list active groups: %w", err)
+	}
+
+	// 分组 -> 账号支持的模型集合（model_mapping 键，lowercase）。仅统计
+	// active+schedulable 账号，与调度可用口径一致。
+	accountModels := make(map[int64]map[string]struct{})
+	if s.accountRepo != nil {
+		if accounts, lerr := s.accountRepo.ListActive(ctx); lerr == nil {
+			accountModels = buildAccountModelsIndex(accounts)
+		}
+	}
+
+	allowedModels := make(map[string]struct{}, len(modelWhitelist))
+	for _, m := range modelWhitelist {
+		if m = strings.TrimSpace(m); m != "" {
+			allowedModels[strings.ToLower(m)] = struct{}{}
+		}
 	}
 
 	sort.SliceStable(channels, func(i, j int) bool {
@@ -113,6 +136,7 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 		}
 		ch.normalizeBillingModelSource()
 		supported := ch.SupportedModels()
+		supported = filterPlazaWhitelist(supported, allowedModels)
 		s.fillGlobalPricingFallback(supported)
 
 		for _, gid := range ch.GroupIDs {
@@ -120,13 +144,19 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 			if !ok {
 				continue
 			}
+			// 每个分组独立按「分组账号支持的模型」求交：分组内账号没有映射时
+			// 回退为渠道模型清单（accountModels 无该组条目）。
+			groupSupported := supported
+			if am, ok := accountModels[gid]; ok {
+				groupSupported = intersectPlazaSupported(groupSupported, am)
+			}
 			idx := modelIdx[gid]
 			if idx == nil {
-				idx = make(map[modelKey]int, len(supported))
+				idx = make(map[modelKey]int, len(groupSupported))
 				modelIdx[gid] = idx
 			}
-			for j := range supported {
-				m := supported[j]
+			for j := range groupSupported {
+				m := groupSupported[j]
 				if pg.Platform == PlatformComposite {
 					if !isConcreteRequestPlatform(m.Platform) {
 						continue
@@ -179,6 +209,69 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// buildAccountModelsIndex 汇总账号按分组的模型支持：key=groupID，
+// value=该组全部 active+schedulable 账号 model_mapping 键的 lowercase 并集。
+// 账号不在任何分组时不产生条目。
+func buildAccountModelsIndex(accounts []Account) map[int64]map[string]struct{} {
+	out := make(map[int64]map[string]struct{})
+	for i := range accounts {
+		a := &accounts[i]
+		if a.Status != StatusActive || !a.Schedulable {
+			continue
+		}
+		mapping := a.GetModelMapping()
+		if len(mapping) == 0 {
+			continue
+		}
+		for _, gid := range a.GroupIDs {
+			set, ok := out[gid]
+			if !ok {
+				set = make(map[string]struct{}, len(mapping))
+				out[gid] = set
+			}
+			for name := range mapping {
+				set[strings.ToLower(name)] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+// intersectPlazaSupported 保留 supported 中「分组账号支持（model_mapping 键）」的模型。
+// 渠道支持模型按对外模型名匹配（与映射键同口径，大小写不敏感）。
+func intersectPlazaSupported(supported []SupportedModel, accountModels map[string]struct{}) []SupportedModel {
+	if len(accountModels) == 0 {
+		return supported
+	}
+	out := make([]SupportedModel, 0, len(supported))
+	for _, m := range supported {
+		if _, ok := accountModels[strings.ToLower(m.Name)]; ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// filterPlazaWhitelist 按白名单前缀过滤渠道支持模型（大小写不敏感前缀匹配）：
+// 白名单条目 gpt-5.6 会命中 gpt-5.6、gpt-5.6-sol、gpt-5.6-luna 等该平台支持的全部
+// 同系列模型。allowed 为空时原样返回（展示全部模型）。
+func filterPlazaWhitelist(supported []SupportedModel, allowed map[string]struct{}) []SupportedModel {
+	if len(allowed) == 0 {
+		return supported
+	}
+	out := make([]SupportedModel, 0, len(supported))
+	for _, m := range supported {
+		name := strings.ToLower(m.Name)
+		for prefix := range allowed {
+			if strings.HasPrefix(name, prefix) {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // plazaImageDisplayPricing 为图片计费模型合成展示定价，使档位价与实收口径一致：

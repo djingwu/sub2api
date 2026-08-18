@@ -346,6 +346,8 @@ type UpdateSettingsRequest struct {
 	ModelPlazaEnabled     *bool   `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth *bool   `json:"model_plaza_require_auth"`
 	ModelPlazaDescription *string `json:"model_plaza_description"`
+	// ModelPlazaModels 模型广场模型白名单（逗号分隔，空 = 展示全部模型）。
+	ModelPlazaModels *string `json:"model_plaza_models"`
 
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
@@ -1955,6 +1957,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ModelPlazaDescription
 		}(),
+		ModelPlazaModels: func() string {
+			if req.ModelPlazaModels != nil {
+				return *req.ModelPlazaModels
+			}
+			return previousSettings.ModelPlazaModels
+		}(),
 		AffiliateEnabled: func() bool {
 			if req.AffiliateEnabled != nil {
 				return *req.AffiliateEnabled
@@ -2377,6 +2385,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ModelPlazaEnabled:     updatedSettings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth: updatedSettings.ModelPlazaRequireAuth,
 		ModelPlazaDescription: updatedSettings.ModelPlazaDescription,
+		ModelPlazaModels:      updatedSettings.ModelPlazaModels,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 

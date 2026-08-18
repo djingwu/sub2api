@@ -217,6 +217,9 @@ type SystemSettings struct {
 	ModelPlazaEnabled     bool   `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth bool   `json:"model_plaza_require_auth"`
 	ModelPlazaDescription string `json:"model_plaza_description"`
+	// ModelPlazaModels is a comma-separated model whitelist for the plaza page;
+	// empty means show all models.
+	ModelPlazaModels string `json:"model_plaza_models"`
 
 	// Claude Code version check
 	MinClaudeCodeVersion string

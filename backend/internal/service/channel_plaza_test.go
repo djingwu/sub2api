@@ -11,13 +11,29 @@ import (
 )
 
 // newPlazaChannelService 构造 ListPlazaGroups 测试用的 ChannelService。
-func newPlazaChannelService(channels []Channel, groups []Group, pricing *PricingService) *ChannelService {
+// accounts 非空时注入账号仓库（ListPlazaGroups 按其 model_mapping 限定模型范围）。
+func newPlazaChannelService(channels []Channel, groups []Group, pricing *PricingService, accounts ...Account) *ChannelService {
 	repo := &mockChannelRepository{
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
 	}
-	svc := NewChannelService(repo, &stubGroupRepoForAvailable{activeGroups: groups}, nil, nil)
+	var accountRepo AccountRepository
+	if len(accounts) > 0 {
+		accountRepo = &plazaAccountRepoStub{accounts: accounts}
+	}
+	svc := NewChannelService(repo, &stubGroupRepoForAvailable{activeGroups: groups}, nil, nil, accountRepo)
 	svc.pricingService = pricing
 	return svc
+}
+
+// plazaAccountRepoStub 仅实现 ListActive 的账号仓库桩，供广场测试限定账号支持模型。
+// 其余方法通过嵌入 nil 接口值满足编译，若被误调则 panic，便于发现意外调用路径。
+type plazaAccountRepoStub struct {
+	AccountRepository
+	accounts []Account
+}
+
+func (s *plazaAccountRepoStub) ListActive(_ context.Context) ([]Account, error) {
+	return s.accounts, nil
 }
 
 func plazaPricedChannel(id int64, name string, groupIDs []int64, platform string, models ...string) Channel {
@@ -47,7 +63,7 @@ func TestListPlazaGroups_GroupCentricAggregation(t *testing.T) {
 		{ID: 20, Name: "g-empty", Platform: "anthropic", RateMultiplier: 0.5},
 	}
 	svc := newPlazaChannelService(channels, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 1, "无模型的分组不应返回")
 	require.Equal(t, int64(10), out[0].ID)
@@ -72,7 +88,7 @@ func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
 
 	// alpha(无价)按名称序先于 beta(有价):先见者无价,应被有价条目升级。
 	svc := newPlazaChannelService([]Channel{priced, unpriced}, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Len(t, out[0].Models, 1)
@@ -94,7 +110,7 @@ func TestListPlazaGroups_PlatformIsolation(t *testing.T) {
 		{ID: 20, Name: "g-gpt", Platform: "openai", RateMultiplier: 1},
 	}
 	svc := newPlazaChannelService([]Channel{ch}, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 2)
 	byName := map[string][]PlazaModel{}
@@ -122,7 +138,7 @@ func TestListPlazaGroups_CompositeIncludesConfiguredConcretePlatforms(t *testing
 	}
 	groups := []Group{{ID: 10, Name: "composite", Platform: PlatformComposite, RateMultiplier: 1}}
 
-	out, err := newPlazaChannelService([]Channel{ch}, groups, nil).ListPlazaGroups(context.Background())
+	out, err := newPlazaChannelService([]Channel{ch}, groups, nil).ListPlazaGroups(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.Len(t, out, 1)
@@ -146,7 +162,7 @@ func TestListPlazaGroups_CompositeAndOrdinaryGroupsDoNotLeakPlatforms(t *testing
 		{ID: 20, Name: "composite", Platform: PlatformComposite, RateMultiplier: 1},
 	}
 
-	out, err := newPlazaChannelService([]Channel{ch}, groups, nil).ListPlazaGroups(context.Background())
+	out, err := newPlazaChannelService([]Channel{ch}, groups, nil).ListPlazaGroups(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.Len(t, out, 2)
@@ -174,7 +190,7 @@ func TestListPlazaGroups_InactiveChannelSkipped(t *testing.T) {
 	inactive.Status = "inactive"
 	groups := []Group{{ID: 10, Name: "g", Platform: "anthropic", RateMultiplier: 1}}
 	svc := newPlazaChannelService([]Channel{inactive}, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Empty(t, out)
 }
@@ -189,7 +205,7 @@ func TestListPlazaGroups_SortedByRateMultiplierAsc(t *testing.T) {
 		{ID: 30, Name: "cheap", Platform: "anthropic", RateMultiplier: 0.5},
 	}
 	svc := newPlazaChannelService(channels, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 3)
 	require.Equal(t, "cheap", out[0].Name, "倍率低者在前")
@@ -214,7 +230,7 @@ func TestListPlazaGroups_OfficialPricingFill(t *testing.T) {
 	}
 	groups := []Group{{ID: 10, Name: "g", Platform: "anthropic", RateMultiplier: 1}}
 	svc := newPlazaChannelService(channels, groups, pricingSvc)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Len(t, out[0].Models, 3)
@@ -257,7 +273,7 @@ func TestListPlazaGroups_GroupImagePriceOverridesChannelPricing(t *testing.T) {
 		{ID: 20, Name: "g-plain", Platform: "openai", RateMultiplier: 0.1},
 	}
 	svc := newPlazaChannelService(channels, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 2)
 	byName := map[string]PlazaGroup{}
@@ -299,7 +315,7 @@ func TestListPlazaGroups_GroupImagePriceIgnoredForNonImageModes(t *testing.T) {
 	channels := []Channel{plazaPricedChannel(1, "ch", []int64{10}, "openai", "gpt-5")}
 	groups := []Group{{ID: 10, Name: "g", Platform: "openai", RateMultiplier: 1, ImagePrice1K: &imgPrice}}
 	svc := newPlazaChannelService(channels, groups, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	p := out[0].Models[0].Pricing
@@ -309,22 +325,94 @@ func TestListPlazaGroups_GroupImagePriceIgnoredForNonImageModes(t *testing.T) {
 	require.Nil(t, p.PerRequestPrice)
 }
 
+func TestListPlazaGroups_ModelWhitelist(t *testing.T) {
+	channels := []Channel{
+		plazaPricedChannel(1, "chA", []int64{10}, "openai", "gpt-5.5", "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5-pro"),
+	}
+	groups := []Group{{ID: 10, Name: "g-main", Platform: "openai", RateMultiplier: 1}}
+
+	// 空白名单：展示全部模型
+	svc := newPlazaChannelService(channels, groups, nil)
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].Models, 5)
+
+	// 白名单前缀匹配（大小写不敏感）：gpt-5.6 命中 gpt-5.6 及其全部同系列变体
+	out, err = svc.ListPlazaGroups(context.Background(), []string{"gpt-5.5", "GPT-5.6", "  "})
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	models := make([]string, 0, len(out[0].Models))
+	for _, m := range out[0].Models {
+		models = append(models, m.Name)
+	}
+	require.ElementsMatch(t, []string{"gpt-5.5", "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-sol"}, models)
+
+	// 白名单无命中：分组被丢弃（无模型不返回）
+	out, err = svc.ListPlazaGroups(context.Background(), []string{"claude-sonnet"})
+	require.NoError(t, err)
+	require.Empty(t, out)
+}
+
+func TestListPlazaGroups_AccountSupportedModelsIntersect(t *testing.T) {
+	// 渠道清单含 5 个模型，但分组账号 model_mapping 只支持 4 个：
+	// 广场模型 = 渠道定价模型 ∩ 账号支持模型（gpt-5.6 不再出现）。
+	channels := []Channel{
+		plazaPricedChannel(1, "chA", []int64{10}, "openai", "gpt-5.5", "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5-pro"),
+	}
+	groups := []Group{{ID: 10, Name: "g-main", Platform: "openai", RateMultiplier: 1}}
+	accounts := []Account{{
+		ID:          1,
+		Platform:    "openai",
+		Status:      StatusActive,
+		Schedulable: true,
+		GroupIDs:    []int64{10},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"gpt-5.5":       "gpt-5.5",
+				"gpt-5.6-sol":   "gpt-5.6-sol",
+				"gpt-5.6-luna":  "gpt-5.6-luna",
+				"gpt-5.6-terra": "gpt-5.6-terra",
+			},
+		},
+	}}
+	svc := newPlazaChannelService(channels, groups, nil, accounts...)
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	names := make([]string, 0, len(out[0].Models))
+	for _, m := range out[0].Models {
+		names = append(names, m.Name)
+	}
+	require.ElementsMatch(t, []string{"gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol"}, names)
+
+	// 白名单前缀 gpt-5.6 命中账号支持的 gpt-5.6 系列
+	out, err = svc.ListPlazaGroups(context.Background(), []string{"gpt-5.5", "gpt-5.6"})
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	names = names[:0]
+	for _, m := range out[0].Models {
+		names = append(names, m.Name)
+	}
+	require.ElementsMatch(t, []string{"gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol"}, names)
+}
+
 func TestListPlazaGroups_RepoErrorsPropagate(t *testing.T) {
 	sentinel := errors.New("boom")
 	repo := &mockChannelRepository{
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return nil, sentinel },
 	}
-	svc := NewChannelService(repo, &stubGroupRepoForAvailable{}, nil, nil)
-	out, err := svc.ListPlazaGroups(context.Background())
+	svc := NewChannelService(repo, &stubGroupRepoForAvailable{}, nil, nil, nil)
+	out, err := svc.ListPlazaGroups(context.Background(), nil)
 	require.Nil(t, out)
 	require.ErrorIs(t, err, sentinel)
 
 	svc2 := NewChannelService(
 		&mockChannelRepository{listAllFn: func(ctx context.Context) ([]Channel, error) { return nil, nil }},
 		&stubGroupRepoForAvailable{listActiveErr: sentinel},
-		nil, nil,
+		nil, nil, nil,
 	)
-	out2, err2 := svc2.ListPlazaGroups(context.Background())
+	out2, err2 := svc2.ListPlazaGroups(context.Background(), nil)
 	require.Nil(t, out2)
 	require.ErrorIs(t, err2, sentinel)
 }

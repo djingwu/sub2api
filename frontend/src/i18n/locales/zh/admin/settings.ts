@@ -48,6 +48,8 @@ export default {
           requireAuthHint: '开启后未登录访问将跳转登录页；关闭则公开可见，匿名访客仅展示非专属分组。',
           priceDescription: '价格说明（Markdown）',
           priceDescriptionHint: '展示在模型广场页面顶部，可用于说明计费规则、汇率、优惠活动等。',
+          models: '展示模型白名单',
+          modelsHint: '仅展示列表中的模型，多个模型用英文逗号分隔；留空则展示渠道携带的全部模型。',
         },
         riskControl: {
           title: '风控中心',

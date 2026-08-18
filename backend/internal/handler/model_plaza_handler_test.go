@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,31 +24,38 @@ func plazaGroups() []service.PlazaGroup {
 	}
 }
 
-func TestFilterPlazaVisibleGroups_AnonymousSeesOnlyNonExclusive(t *testing.T) {
-	// 匿名(allowedExclusive == nil):仅非专属分组;订阅型公开分组照常可见(橱窗语义)。
-	visible := filterPlazaVisibleGroups(plazaGroups(), nil)
-	require.Len(t, visible, 2)
-	ids := []int64{visible[0].ID, visible[1].ID}
-	require.ElementsMatch(t, []int64{1, 3}, ids)
-}
-
-func TestFilterPlazaVisibleGroups_AuthedSeesGrantedExclusive(t *testing.T) {
-	// 登录:非专属 + 授权的专属;未授权的专属仍不可见。
-	allowed := map[int64]struct{}{2: {}}
-	visible := filterPlazaVisibleGroups(plazaGroups(), allowed)
-	require.Len(t, visible, 3)
-	ids := make([]int64, 0, len(visible))
-	for _, g := range visible {
-		ids = append(ids, g.ID)
+func TestModelPlazaHandler_AllGroupsVisibleWithoutAuth(t *testing.T) {
+	// 模型广场不再按专属/授权裁剪：所有分组（含专属）一律展示。
+	// 此处直接构造 handler 调 Get，验证专属分组不被过滤。
+	gin.SetMode(gin.TestMode)
+	h := &ModelPlazaHandler{
+		channelService: &stubPlazaChannelService{},
+		settingService: &stubPlazaSettingService{},
 	}
-	require.ElementsMatch(t, []int64{1, 2, 3}, ids)
-}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/model-plaza", nil)
 
-func TestFilterPlazaVisibleGroups_AuthedEmptySetSeesNoExclusive(t *testing.T) {
-	// 登录但无任何专属授权(空集合,非 nil):与匿名同样只见非专属,
-	// 但语义区分要保持——空集合不能被当作 nil 匿名分支。
-	visible := filterPlazaVisibleGroups(plazaGroups(), map[int64]struct{}{})
-	require.Len(t, visible, 2)
+	h.Get(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Data struct {
+			Groups []struct {
+				ID          int64 `json:"id"`
+				IsExclusive bool  `json:"is_exclusive"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Data.Groups, 4, "专属分组也全部展示")
+	exclusive := 0
+	for _, g := range resp.Data.Groups {
+		if g.IsExclusive {
+			exclusive++
+		}
+	}
+	require.Equal(t, 2, exclusive)
 }
 
 func TestModelPlazaHandler_NilSettingServiceFailsClosed404(t *testing.T) {
@@ -125,3 +133,17 @@ func TestToModelPlazaOfficialPricing_NilPassthrough(t *testing.T) {
 }
 
 func testPtr(v float64) *float64 { return &v }
+
+// stubPlazaChannelService 返回固定的 4 个分组（含 2 个专属），供 handler 测试使用。
+type stubPlazaChannelService struct{}
+
+func (s *stubPlazaChannelService) ListPlazaGroups(_ context.Context, _ []string) ([]service.PlazaGroup, error) {
+	return plazaGroups(), nil
+}
+
+// stubPlazaSettingService 提供已启用的广场运行时（无白名单）。
+type stubPlazaSettingService struct{}
+
+func (s *stubPlazaSettingService) GetModelPlazaRuntime(_ context.Context) service.ModelPlazaRuntime {
+	return service.ModelPlazaRuntime{Enabled: true}
+}

@@ -492,6 +492,9 @@ type ModelPlazaRuntime struct {
 	Enabled     bool
 	RequireAuth bool
 	Description string
+	// Models is the model whitelist for the plaza (exact names, original case);
+	// empty means show all models.
+	Models []string
 }
 
 // GetModelPlazaRuntime reads the model-plaza feature switches directly from the
@@ -502,6 +505,7 @@ func (s *SettingService) GetModelPlazaRuntime(ctx context.Context) ModelPlazaRun
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyModelPlazaDescription,
+		SettingKeyModelPlazaModels,
 	})
 	if err != nil {
 		return ModelPlazaRuntime{Enabled: false}
@@ -510,7 +514,21 @@ func (s *SettingService) GetModelPlazaRuntime(ctx context.Context) ModelPlazaRun
 		Enabled:     vals[SettingKeyModelPlazaEnabled] == "true",
 		RequireAuth: vals[SettingKeyModelPlazaRequireAuth] == "true",
 		Description: vals[SettingKeyModelPlazaDescription],
+		Models:      splitCommaTrimmed(vals[SettingKeyModelPlazaModels]),
 	}
+}
+
+// splitCommaTrimmed splits a comma-separated string, trimming spaces and dropping
+// empty entries.
+func splitCommaTrimmed(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // IsUserErrorViewAllowed reads the user-facing error-requests visibility switch

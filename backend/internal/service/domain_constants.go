@@ -510,6 +510,11 @@ const (
 	// the Model Plaza page (global pricing notes, exchange rate, promotions, ...).
 	SettingKeyModelPlazaDescription = "model_plaza_description"
 
+	// SettingKeyModelPlazaModels stores an optional comma-separated model whitelist for
+	// the Model Plaza page. Models not in the list are hidden from the plaza; empty
+	// means show all models carried by the channel.
+	SettingKeyModelPlazaModels = "model_plaza_models"
+
 	// SettingKeyUpstreamBillingProbeSettings stores the global enable switch and interval
 	// for probing remote Sub2API API-key billing metadata.
 	SettingKeyUpstreamBillingProbeSettings = "upstream_billing_probe_settings"

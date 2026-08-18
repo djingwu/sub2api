@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -13,13 +14,27 @@ import (
 // ModelPlazaHandler 处理「模型广场」查询。
 //
 // 广场路由挂 OptionalJWT 中间件：匿名可访问（除非 require_auth 开启），带 token 则
-// 识别用户。可见性规则（橱窗语义，与「可用渠道」的可绑定语义不同）：
-//   - 匿名：仅非专属分组（订阅型照常展示）；
-//   - 登录：非专属分组 + user_allowed_groups 授权的专属分组（不检查订阅有效性）。
+// 识别用户。所有分组（含专属分组）对访客一律展示，无需授权；模型列表可按
+// model_plaza_models 白名单裁剪。
 type ModelPlazaHandler struct {
-	channelService *service.ChannelService
-	apiKeyService  *service.APIKeyService
-	settingService *service.SettingService
+	channelService modelPlazaChannelService
+	apiKeyService  modelPlazaAPIKeyService
+	settingService modelPlazaSettingService
+}
+
+// modelPlazaChannelService 广场渠道数据源（由 *service.ChannelService 实现）。
+type modelPlazaChannelService interface {
+	ListPlazaGroups(ctx context.Context, modelWhitelist []string) ([]service.PlazaGroup, error)
+}
+
+// modelPlazaSettingService 广场运行时设置源（由 *service.SettingService 实现）。
+type modelPlazaSettingService interface {
+	GetModelPlazaRuntime(ctx context.Context) service.ModelPlazaRuntime
+}
+
+// modelPlazaAPIKeyService 用户专属倍率源（由 *service.APIKeyService 实现）。
+type modelPlazaAPIKeyService interface {
+	GetUserGroupRates(ctx context.Context, userID int64) (map[int64]float64, error)
 }
 
 // NewModelPlazaHandler 创建模型广场 handler。
@@ -98,61 +113,30 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 		return
 	}
 
-	groups, err := h.channelService.ListPlazaGroups(c.Request.Context())
+	groups, err := h.channelService.ListPlazaGroups(c.Request.Context(), rt.Models)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	// allowedExclusive == nil 表示匿名；登录用户恒为非 nil（可能为空集合）。
-	var allowedExclusive map[int64]struct{}
+	// 用户专属倍率仅是展示增强，失败降级为分组默认倍率。
 	var userRates map[int64]float64
 	if authed {
-		allowedExclusive, err = h.apiKeyService.GetUserAllowedGroupIDSet(c.Request.Context(), subject.UserID)
-		if err != nil {
-			// 可见性数据拿不到时不能静默降级成匿名视图（会错漏专属分组），直接报错。
-			response.ErrorFrom(c, err)
-			return
-		}
 		userRates, err = h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
 		if err != nil {
-			// 专属倍率仅是展示增强，失败降级为分组默认倍率。
 			slog.Warn("model_plaza_user_rates_failed", "error", err, "user_id", subject.UserID)
 			userRates = nil
 		}
 	}
 
-	visible := filterPlazaVisibleGroups(groups, allowedExclusive)
-
-	out := make([]modelPlazaGroup, 0, len(visible))
-	for i := range visible {
-		out = append(out, toModelPlazaGroupDTO(&visible[i], userRates))
+	out := make([]modelPlazaGroup, 0, len(groups))
+	for i := range groups {
+		out = append(out, toModelPlazaGroupDTO(&groups[i], userRates))
 	}
 	response.Success(c, modelPlazaResponse{
 		Description: rt.Description,
 		Groups:      out,
 	})
-}
-
-// filterPlazaVisibleGroups 按登录态裁剪分组可见性。
-// allowedExclusive == nil 表示匿名（仅非专属）；非 nil 表示登录（非专属 + 授权专属）。
-func filterPlazaVisibleGroups(
-	groups []service.PlazaGroup,
-	allowedExclusive map[int64]struct{},
-) []service.PlazaGroup {
-	visible := make([]service.PlazaGroup, 0, len(groups))
-	for _, g := range groups {
-		if g.IsExclusive {
-			if allowedExclusive == nil {
-				continue
-			}
-			if _, ok := allowedExclusive[g.ID]; !ok {
-				continue
-			}
-		}
-		visible = append(visible, g)
-	}
-	return visible
 }
 
 // toModelPlazaGroupDTO 将 service 层广场分组映射为白名单 DTO,并合并用户专属倍率。
