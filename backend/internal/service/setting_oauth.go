@@ -21,6 +21,38 @@ func CoerceDingTalkCorpPolicyForWrite(policy string) string {
 	return coerceDeprecatedDingTalkCorpPolicy(policy)
 }
 
+// GetDingTalkDeptGroupMap 返回钉钉部门 → 站点专属订阅分组的映射（dept_id → 部门名）。
+// 数据源为设置项 dingtalk_dept_group_map（JSON 对象，key=部门ID 字符串，value=部门名）。
+// 解析时过滤：非数字 key、<=1 的部门ID（钉钉根部门为 1）、空部门名。
+func (s *SettingService) GetDingTalkDeptGroupMap(ctx context.Context) (map[int64]string, error) {
+	if s == nil || s.settingRepo == nil {
+		return map[int64]string{}, nil
+	}
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyDingTalkDeptGroupMap})
+	if err != nil {
+		return nil, fmt.Errorf("get dingtalk dept group map settings: %w", err)
+	}
+	raw := strings.TrimSpace(settings[SettingKeyDingTalkDeptGroupMap])
+	if raw == "" {
+		return map[int64]string{}, nil
+	}
+	var rawMap map[string]string
+	if err := json.Unmarshal([]byte(raw), &rawMap); err != nil {
+		return nil, fmt.Errorf("parse dingtalk_dept_group_map: %w", err)
+	}
+	out := make(map[int64]string, len(rawMap))
+	for key, name := range rawMap {
+		id, err := strconv.ParseInt(strings.TrimSpace(key), 10, 64)
+		if err != nil || id <= 1 {
+			continue
+		}
+		if name = strings.TrimSpace(name); name != "" {
+			out[id] = name
+		}
+	}
+	return out, nil
+}
+
 // coerceDeprecatedDingTalkCorpPolicy 把已废弃的 corp_restriction_policy 值替换成安全的等价值。
 // 升级前残留在 DB 中的 "whitelist" 会导致 callback 链路在 default case 静默 fail-closed
 // （所有钉钉登录被拒）。这里统一退化为 "none" 让服务保持可用，并 warn 日志提醒 admin 重新保存设置。

@@ -123,6 +123,16 @@ func (s *defaultSubscriptionAssignerStub) AssignOrExtendSubscription(_ context.C
 	return &UserSubscription{UserID: input.UserID, GroupID: input.GroupID}, false, nil
 }
 
+func (s *defaultSubscriptionAssignerStub) AssignSubscription(_ context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	if input != nil {
+		s.calls = append(s.calls, *input)
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &UserSubscription{UserID: input.UserID, GroupID: input.GroupID}, nil
+}
+
 func (s *refreshTokenCacheStub) StoreRefreshToken(context.Context, string, *RefreshTokenData, time.Duration) error {
 	return nil
 }

@@ -96,6 +96,7 @@ type SystemSettings struct {
 	DingTalkConnectSyncCorpEmailAttrName   string `json:"dingtalk_connect_sync_corp_email_attr_name"`
 	DingTalkConnectSyncDisplayNameAttrName string `json:"dingtalk_connect_sync_display_name_attr_name"`
 	DingTalkConnectSyncDeptAttrName        string `json:"dingtalk_connect_sync_dept_attr_name"`
+	DingTalkDeptGroupMap                   string `json:"dingtalk_dept_group_map"`
 
 	WeChatConnectEnabled                   bool   `json:"wechat_connect_enabled"`
 	WeChatConnectAppID                     string `json:"wechat_connect_app_id"`

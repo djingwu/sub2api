@@ -290,6 +290,7 @@ const (
 	SettingKeyDingTalkConnectSyncCorpEmailAttrName   = "dingtalk_connect_sync_corp_email_attr_name"
 	SettingKeyDingTalkConnectSyncDisplayNameAttrName = "dingtalk_connect_sync_display_name_attr_name"
 	SettingKeyDingTalkConnectSyncDeptAttrName        = "dingtalk_connect_sync_dept_attr_name"
+	SettingKeyDingTalkDeptGroupMap                   = "dingtalk_dept_group_map" // 钉钉部门ID -> 部门名（JSON 对象），登录时按部门ID匹配专属订阅分组
 
 	// WeChat Connect OAuth 登录设置
 	SettingKeyWeChatConnectEnabled             = "wechat_connect_enabled"

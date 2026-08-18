@@ -203,6 +203,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.DingTalkConnectSyncDeptAttrKey != after.DingTalkConnectSyncDeptAttrKey {
 		changed = append(changed, "dingtalk_connect_sync_dept_attr_key")
 	}
+	if before.DingTalkDeptGroupMap != after.DingTalkDeptGroupMap {
+		changed = append(changed, "dingtalk_dept_group_map")
+	}
 	if before.WeChatConnectEnabled != after.WeChatConnectEnabled {
 		changed = append(changed, "wechat_connect_enabled")
 	}

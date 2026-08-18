@@ -584,6 +584,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		}
 	}
 
+	// 钉钉部门 → 分组映射（JSON 对象：{"<dept_id>": "<部门名>"}）。
+	// 原始字符串透传，由后台设置界面编辑；解析在 GetDingTalkDeptGroupMap 中进行。
+	result.DingTalkDeptGroupMap = strings.TrimSpace(settings[SettingKeyDingTalkDeptGroupMap])
+
 	// Generic OIDC 设置：
 	// - 兼容 config.yaml/env
 	// - 支持后台系统设置覆盖并持久化（存储于 DB）

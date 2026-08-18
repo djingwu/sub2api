@@ -1011,6 +1011,16 @@ func (h *AuthHandler) syncDingTalkIdentity(ctx context.Context, cfg config.DingT
 			primaryDeptID = staff.DeptIDs[0]
 		}
 		slog.Info("dingtalk sync: pick primary dept", "user_id", userID, "all_dept_ids", staff.DeptIDs, "primary", primaryDeptID)
+		// 部门专属分组绑定：按 dept_id 匹配映射表（settings.dingtalk_dept_group_map）。
+		// 命中 → 幂等绑定该部门专属订阅分组 + 固定 $200 订阅；未命中 → 不分配。
+		// 公司直属（dept_id<=1，根部门）不参与匹配。不依赖 dept path 解析成功。
+		if primaryDeptID > 1 && h.authService != nil {
+			if err := h.authService.BindUserToDingTalkDeptGroup(ctx, userID, primaryDeptID); err != nil {
+				slog.Warn("dingtalk sync: failed to bind user to dept group", "user_id", userID, "dept_id", primaryDeptID, "err", err)
+			} else {
+				slog.Info("dingtalk sync: user dept group binding done", "user_id", userID, "dept_id", primaryDeptID)
+			}
+		}
 		path, err := h.resolveDingTalkDeptPath(ctx, client, primaryDeptID)
 		if err != nil {
 			slog.Warn("dingtalk sync: failed to resolve dept path", "user_id", userID, "dept_id", primaryDeptID, "err", err)

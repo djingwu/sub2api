@@ -35,6 +35,15 @@ func (s *authIdentityDefaultSubAssignerStub) AssignOrExtendSubscription(
 	return &service.UserSubscription{UserID: input.UserID, GroupID: input.GroupID}, true, nil
 }
 
+func (s *authIdentityDefaultSubAssignerStub) AssignSubscription(
+	_ context.Context,
+	input *service.AssignSubscriptionInput,
+) (*service.UserSubscription, error) {
+	cloned := *input
+	s.calls = append(s.calls, &cloned)
+	return &service.UserSubscription{UserID: input.UserID, GroupID: input.GroupID}, nil
+}
+
 type flakyAuthIdentityDefaultSubAssignerStub struct {
 	failuresRemaining int
 	calls             []*service.AssignSubscriptionInput
@@ -51,6 +60,19 @@ func (s *flakyAuthIdentityDefaultSubAssignerStub) AssignOrExtendSubscription(
 		return nil, false, errors.New("temporary assign failure")
 	}
 	return &service.UserSubscription{UserID: input.UserID, GroupID: input.GroupID}, true, nil
+}
+
+func (s *flakyAuthIdentityDefaultSubAssignerStub) AssignSubscription(
+	_ context.Context,
+	input *service.AssignSubscriptionInput,
+) (*service.UserSubscription, error) {
+	cloned := *input
+	s.calls = append(s.calls, &cloned)
+	if s.failuresRemaining > 0 {
+		s.failuresRemaining--
+		return nil, errors.New("temporary assign failure")
+	}
+	return &service.UserSubscription{UserID: input.UserID, GroupID: input.GroupID}, nil
 }
 
 type authIdentitySettingRepoStub struct {

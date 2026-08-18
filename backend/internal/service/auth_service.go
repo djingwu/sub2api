@@ -15,7 +15,6 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -98,11 +97,9 @@ type CaptchaProof struct {
 
 type DefaultSubscriptionAssigner interface {
 	AssignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error)
+	// AssignSubscription 幂等分配订阅：已存在且未过期时保持原样，不续期不累加。
+	AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error)
 }
-
-// FixedSubscriptionPlanProductName 标识「新用户自动绑定」的固定订阅套餐。
-// 该套餐由迁移 225 播种（subscription_plans.product_name = FIXED_200_USD）。
-const FixedSubscriptionPlanProductName = "FIXED_200_USD"
 
 type signupGrantPlan struct {
 	Balance        float64
@@ -901,32 +898,6 @@ func (s *AuthService) assignSubscriptions(ctx context.Context, userID int64, ite
 		}); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to assign default subscription: user_id=%d group_id=%d err=%v", userID, item.GroupID, err)
 		}
-	}
-	// 固定套餐无条件绑定：所有渠道新用户注册/首次登录都会自动绑定（fail-open）。
-	s.bindFixedSubscriptionPlanToNewUser(ctx, userID)
-}
-
-// bindFixedSubscriptionPlanToNewUser 将固定订阅套餐自动绑定到新注册用户。
-// 套餐（product_name=FIXED_200_USD，售价 $200）由迁移 225 播种；
-// 若套餐缺失或绑定失败，仅记录日志，不阻塞注册/首次登录流程。
-func (s *AuthService) bindFixedSubscriptionPlanToNewUser(ctx context.Context, userID int64) {
-	if s == nil || s.entClient == nil || s.defaultSubAssigner == nil || userID <= 0 {
-		return
-	}
-	plan, err := s.entClient.SubscriptionPlan.Query().
-		Where(subscriptionplan.ProductNameEQ(FixedSubscriptionPlanProductName)).
-		First(ctx)
-	if err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Fixed subscription plan not available for user %d: %v", userID, err)
-		return
-	}
-	if _, _, err := s.defaultSubAssigner.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{
-		UserID:       userID,
-		GroupID:      plan.GroupID,
-		ValidityDays: plan.ValidityDays,
-		Notes:        "auto bound to fixed $200 plan on signup",
-	}); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to bind fixed subscription plan for user %d: %v", userID, err)
 	}
 }
 

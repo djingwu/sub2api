@@ -87,6 +87,9 @@ type SystemSettings struct {
 	DingTalkConnectSyncCorpEmailAttrName   string
 	DingTalkConnectSyncDisplayNameAttrName string
 	DingTalkConnectSyncDeptAttrName        string
+	// DingTalkDeptGroupMap 钉钉部门ID → 部门名映射（JSON 对象字符串），
+	// 钉钉登录时按部门ID匹配专属订阅分组；未匹配则不分配分组。
+	DingTalkDeptGroupMap string
 
 	// WeChat Connect OAuth 登录
 	WeChatConnectEnabled                   bool

@@ -536,6 +536,7 @@ export interface SystemSettings {
   dingtalk_connect_sync_corp_email_attr_name: string;
   dingtalk_connect_sync_display_name_attr_name: string;
   dingtalk_connect_sync_dept_attr_name: string;
+  dingtalk_dept_group_map: string;
 
   // WeChat Connect OAuth settings
   wechat_connect_enabled: boolean;
@@ -867,6 +868,7 @@ export interface UpdateSettingsRequest {
   dingtalk_connect_sync_corp_email_attr_name?: string;
   dingtalk_connect_sync_display_name_attr_name?: string;
   dingtalk_connect_sync_dept_attr_name?: string;
+  dingtalk_dept_group_map?: string;
   wechat_connect_enabled?: boolean;
   wechat_connect_app_id?: string;
   wechat_connect_app_secret?: string;

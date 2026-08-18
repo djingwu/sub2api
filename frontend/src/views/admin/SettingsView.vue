@@ -3405,6 +3405,23 @@
                       {{ t("admin.settings.dingtalk.syncDeptTargetHint") }}
                     </p>
                   </div>
+                  <div v-if="form.dingtalk_connect_sync_dept" class="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-800">
+                    <div class="flex items-center gap-2">
+                      <label class="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap min-w-[5rem]">
+                        {{ t("admin.settings.dingtalk.deptGroupMap") }}
+                      </label>
+                    </div>
+                    <textarea
+                      v-model="form.dingtalk_dept_group_map"
+                      rows="5"
+                      spellcheck="false"
+                      class="input mt-2 font-mono text-xs"
+                      :placeholder='localText(`{"123": "移动应用部", "456": "算法部"}`, `{"123": "Mobile App Dept", "456": "Algorithm Dept"}`)'
+                    ></textarea>
+                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                      {{ t("admin.settings.dingtalk.deptGroupMapHint") }}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -9602,6 +9619,7 @@ const form = reactive<SettingsForm>({
   dingtalk_connect_sync_corp_email_attr_name: localText("钉钉企业邮箱", "DingTalk Corporate Email"),
   dingtalk_connect_sync_display_name_attr_name: localText("钉钉姓名", "DingTalk Name"),
   dingtalk_connect_sync_dept_attr_name: localText("钉钉部门", "DingTalk Department"),
+  dingtalk_dept_group_map: "",
   wechat_connect_enabled: false,
   wechat_connect_app_id: "",
   wechat_connect_app_secret: "",
@@ -11186,6 +11204,7 @@ async function saveSettings() {
       dingtalk_connect_sync_corp_email_attr_name: form.dingtalk_connect_sync_corp_email_attr_name,
       dingtalk_connect_sync_display_name_attr_name: form.dingtalk_connect_sync_display_name_attr_name,
       dingtalk_connect_sync_dept_attr_name: form.dingtalk_connect_sync_dept_attr_name,
+      dingtalk_dept_group_map: form.dingtalk_dept_group_map,
       wechat_connect_enabled: form.wechat_connect_enabled,
       wechat_connect_app_id:
         form.wechat_connect_open_app_id ||

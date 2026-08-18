@@ -18,9 +18,10 @@ import (
 )
 
 // newAuthServiceForFixedPlan builds an AuthService with a real ent client
-// (in-memory sqlite) and a stub subscription assigner. The user repository is
-// not exercised by the fixed-plan binding path, so nil is passed.
-func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, assigner *defaultSubscriptionAssignerStub) *AuthService {
+// (in-memory sqlite), a stub setting repo (carrying dingtalk_dept_group_map)
+// and a stub subscription assigner. The user repository is not exercised by
+// the dept-group binding path, so nil is passed.
+func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, settings map[string]string, assigner *defaultSubscriptionAssignerStub) *AuthService {
 	t.Helper()
 
 	cfg := &config.Config{
@@ -40,7 +41,7 @@ func newAuthServiceForFixedPlan(t *testing.T, client *dbent.Client, assigner *de
 		nil, // redeemRepo
 		nil, // refreshTokenCache
 		cfg,
-		NewSettingService(&settingRepoStub{values: map[string]string{}}, cfg),
+		NewSettingService(&settingRepoStub{values: settings}, cfg),
 		nil, // emailService
 		nil, // turnstileService
 		nil, // emailQueueService
@@ -68,18 +69,10 @@ func newEntClientForFixedPlan(t *testing.T) *dbent.Client {
 	return client
 }
 
-func TestBindFixedSubscriptionPlanToNewUser_BindsPlanFromDB(t *testing.T) {
-	client := newEntClientForFixedPlan(t)
-	ctx := context.Background()
-
-	group, err := client.Group.Create().
-		SetName("fixed-plan-group").
-		SetSubscriptionType(SubscriptionTypeSubscription).
-		Save(ctx)
-	require.NoError(t, err)
-
+func seedFixedPlan(t *testing.T, ctx context.Context, client *dbent.Client) int {
+	t.Helper()
 	plan, err := client.SubscriptionPlan.Create().
-		SetGroupID(group.ID).
+		SetGroupID(0).
 		SetName("$200 固定套餐").
 		SetPrice(200).
 		SetCurrency("USD").
@@ -87,52 +80,144 @@ func TestBindFixedSubscriptionPlanToNewUser_BindsPlanFromDB(t *testing.T) {
 		SetProductName(FixedSubscriptionPlanProductName).
 		Save(ctx)
 	require.NoError(t, err)
-
-	assigner := &defaultSubscriptionAssignerStub{}
-	svc := newAuthServiceForFixedPlan(t, client, assigner)
-
-	svc.assignSubscriptions(ctx, 42, nil, "signup notes")
-
-	require.Len(t, assigner.calls, 1, "fixed plan must be auto-bound on signup")
-	require.Equal(t, int64(42), assigner.calls[0].UserID)
-	require.Equal(t, plan.GroupID, assigner.calls[0].GroupID)
-	require.Equal(t, 30, assigner.calls[0].ValidityDays)
-	require.Contains(t, assigner.calls[0].Notes, "fixed $200")
+	return plan.ValidityDays
 }
 
-func TestBindFixedSubscriptionPlanToNewUser_MissingPlanSkips(t *testing.T) {
-	client := newEntClientForFixedPlan(t)
-	assigner := &defaultSubscriptionAssignerStub{}
-	svc := newAuthServiceForFixedPlan(t, client, assigner)
+const deptMapSetting = `{"7": "移动应用部", "88": "算法部"}`
 
-	svc.assignSubscriptions(context.Background(), 42, nil, "signup notes")
-
-	require.Empty(t, assigner.calls, "no binding when the fixed plan is absent")
-}
-
-func TestBindFixedSubscriptionPlanToNewUser_AssigneeErrorFailsOpen(t *testing.T) {
+func TestBindUserToDingTalkDeptGroup_MatchedDeptBinds(t *testing.T) {
 	client := newEntClientForFixedPlan(t)
 	ctx := context.Background()
+	validityDays := seedFixedPlan(t, ctx, client)
 
-	group, err := client.Group.Create().
-		SetName("fixed-plan-group-2").
+	deptGroup, err := client.Group.Create().
+		SetName("移动应用部").
+		SetIsExclusive(true).
 		SetSubscriptionType(SubscriptionTypeSubscription).
 		Save(ctx)
 	require.NoError(t, err)
-	_, err = client.SubscriptionPlan.Create().
-		SetGroupID(group.ID).
-		SetName("$200 固定套餐").
-		SetPrice(200).
-		SetCurrency("USD").
-		SetValidityDays(30).
-		SetProductName(FixedSubscriptionPlanProductName).
+
+	assigner := &defaultSubscriptionAssignerStub{}
+	svc := newAuthServiceForFixedPlan(t, client, map[string]string{SettingKeyDingTalkDeptGroupMap: deptMapSetting}, assigner)
+
+	require.NoError(t, svc.BindUserToDingTalkDeptGroup(ctx, 42, 7))
+
+	require.Len(t, assigner.calls, 1, "matched dept must bind the fixed plan")
+	require.Equal(t, int64(42), assigner.calls[0].UserID)
+	require.Equal(t, deptGroup.ID, assigner.calls[0].GroupID)
+	require.Equal(t, validityDays, assigner.calls[0].ValidityDays)
+	require.Equal(t, int64(42), assigner.calls[0].AssignedBy)
+	require.Contains(t, assigner.calls[0].Notes, "dept group")
+}
+
+func TestBindUserToDingTalkDeptGroup_UnmatchedDeptNoop(t *testing.T) {
+	client := newEntClientForFixedPlan(t)
+	ctx := context.Background()
+	seedFixedPlan(t, ctx, client)
+
+	assigner := &defaultSubscriptionAssignerStub{}
+	svc := newAuthServiceForFixedPlan(t, client, map[string]string{SettingKeyDingTalkDeptGroupMap: deptMapSetting}, assigner)
+
+	// 未匹配部门：不分配任何分组/订阅
+	require.NoError(t, svc.BindUserToDingTalkDeptGroup(ctx, 42, 999))
+	// 空映射 / 未配置设置项
+	svcEmpty := newAuthServiceForFixedPlan(t, client, map[string]string{}, assigner)
+	require.NoError(t, svcEmpty.BindUserToDingTalkDeptGroup(ctx, 42, 7))
+	// 根部门 / 非法 id
+	require.NoError(t, svc.BindUserToDingTalkDeptGroup(ctx, 42, 1))
+	require.NoError(t, svc.BindUserToDingTalkDeptGroup(ctx, 42, 0))
+
+	require.Empty(t, assigner.calls, "no binding when dept is not matched")
+}
+
+func TestBindUserToDingTalkDeptGroup_MissingGroupFailsOpen(t *testing.T) {
+	client := newEntClientForFixedPlan(t)
+	ctx := context.Background()
+	seedFixedPlan(t, ctx, client)
+
+	assigner := &defaultSubscriptionAssignerStub{}
+	svc := newAuthServiceForFixedPlan(t, client, map[string]string{SettingKeyDingTalkDeptGroupMap: `{"7": "不存在的部门组"}`}, assigner)
+
+	err := svc.BindUserToDingTalkDeptGroup(ctx, 42, 7)
+	require.Error(t, err, "mapped group missing is surfaced for operator logging")
+	require.Empty(t, assigner.calls)
+}
+
+func TestBindUserToDingTalkDeptGroup_MissingPlanFailsOpen(t *testing.T) {
+	client := newEntClientForFixedPlan(t)
+	ctx := context.Background()
+
+	_, err := client.Group.Create().
+		SetName("移动应用部").
+		SetIsExclusive(true).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		Save(ctx)
+	require.NoError(t, err)
+
+	assigner := &defaultSubscriptionAssignerStub{}
+	svc := newAuthServiceForFixedPlan(t, client, map[string]string{SettingKeyDingTalkDeptGroupMap: deptMapSetting}, assigner)
+
+	err = svc.BindUserToDingTalkDeptGroup(ctx, 42, 7)
+	require.Error(t, err, "plan missing is surfaced to the caller for logging")
+	require.Empty(t, assigner.calls)
+}
+
+func TestBindUserToDingTalkDeptGroup_InvalidMapFailsOpen(t *testing.T) {
+	client := newEntClientForFixedPlan(t)
+	ctx := context.Background()
+
+	assigner := &defaultSubscriptionAssignerStub{}
+	svc := newAuthServiceForFixedPlan(t, client, map[string]string{SettingKeyDingTalkDeptGroupMap: `not-json`}, assigner)
+
+	err := svc.BindUserToDingTalkDeptGroup(ctx, 42, 7)
+	require.Error(t, err)
+	require.Empty(t, assigner.calls)
+}
+
+func TestBindUserToDingTalkDeptGroup_AssigneeErrorFailsOpen(t *testing.T) {
+	client := newEntClientForFixedPlan(t)
+	ctx := context.Background()
+	seedFixedPlan(t, ctx, client)
+
+	_, err := client.Group.Create().
+		SetName("移动应用部").
+		SetIsExclusive(true).
+		SetSubscriptionType(SubscriptionTypeSubscription).
 		Save(ctx)
 	require.NoError(t, err)
 
 	assigner := &defaultSubscriptionAssignerStub{err: ErrGroupNotSubscriptionType}
-	svc := newAuthServiceForFixedPlan(t, client, assigner)
+	svc := newAuthServiceForFixedPlan(t, client, map[string]string{SettingKeyDingTalkDeptGroupMap: deptMapSetting}, assigner)
 
-	require.NotPanics(t, func() {
-		svc.assignSubscriptions(ctx, 42, nil, "signup notes")
-	})
+	err = svc.BindUserToDingTalkDeptGroup(ctx, 42, 7)
+	require.Error(t, err)
+}
+
+func TestGetDingTalkDeptGroupMap_ParsesAndFilters(t *testing.T) {
+	cfg := &config.Config{Default: config.DefaultConfig{UserBalance: 1, UserConcurrency: 1}}
+	svc := NewSettingService(&settingRepoStub{values: map[string]string{
+		SettingKeyDingTalkDeptGroupMap: `{"7": "移动应用部", "1": "公司", "abc": "bad", "88": " 算法部 "}`,
+	}}, cfg)
+
+	m, err := svc.GetDingTalkDeptGroupMap(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, map[int64]string{7: "移动应用部", 88: "算法部"}, m)
+}
+
+func TestGetDingTalkDeptGroupMap_EmptyOrInvalid(t *testing.T) {
+	cfg := &config.Config{Default: config.DefaultConfig{UserBalance: 1, UserConcurrency: 1}}
+
+	svcEmpty := NewSettingService(&settingRepoStub{values: map[string]string{}}, cfg)
+	m, err := svcEmpty.GetDingTalkDeptGroupMap(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, m)
+
+	svcBad := NewSettingService(&settingRepoStub{values: map[string]string{SettingKeyDingTalkDeptGroupMap: `{broken`}}, cfg)
+	_, err = svcBad.GetDingTalkDeptGroupMap(context.Background())
+	require.Error(t, err)
+
+	var nilSvc *SettingService
+	m, err = nilSvc.GetDingTalkDeptGroupMap(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, m)
 }

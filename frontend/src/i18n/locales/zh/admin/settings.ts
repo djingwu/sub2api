@@ -318,6 +318,8 @@ export default {
         syncCorpEmailTargetHint: '默认 dingtalk_email / 钉钉企业邮箱；保存设置时按上述属性键和显示名称自动创建用户属性（已存在则仅同步显示名称）',
         syncDeptTarget: '属性键',
         syncDeptTargetHint: '默认 dingtalk_department / 钉钉部门；保存设置时按上述属性键和显示名称自动创建用户属性（已存在则仅同步显示名称）',
+        deptGroupMap: '部门专属分组映射',
+        deptGroupMapHint: "JSON 对象：key=钉钉部门ID，value=部门名（须与预建的专属分组同名）。钉钉用户登录时按直属部门ID匹配，命中则自动绑定该分组的 $200 订阅；未命中不分配任何分组。示例：{'{'}\"123\":\"移动应用部\",\"456\":\"算法部\"{'}'}",
         syncAttrDisplayName: '显示名称'
       },
       oidc: {

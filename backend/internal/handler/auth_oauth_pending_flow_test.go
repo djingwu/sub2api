@@ -3510,6 +3510,16 @@ func (s *oauthPendingFlowDefaultSubAssignerStub) AssignOrExtendSubscription(
 	return nil, false, nil
 }
 
+func (s *oauthPendingFlowDefaultSubAssignerStub) AssignSubscription(
+	_ context.Context,
+	input *service.AssignSubscriptionInput,
+) (*service.UserSubscription, error) {
+	if input != nil {
+		s.calls = append(s.calls, *input)
+	}
+	return nil, nil
+}
+
 type oauthPendingFlowTotpCacheStub struct {
 	setupSessions  map[int64]*service.TotpSetupSession
 	loginSessions  map[string]*service.TotpLoginSession

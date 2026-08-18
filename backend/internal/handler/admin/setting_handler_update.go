@@ -98,6 +98,7 @@ type UpdateSettingsRequest struct {
 	DingTalkConnectSyncCorpEmailAttrName   string `json:"dingtalk_connect_sync_corp_email_attr_name"`
 	DingTalkConnectSyncDisplayNameAttrName string `json:"dingtalk_connect_sync_display_name_attr_name"`
 	DingTalkConnectSyncDeptAttrName        string `json:"dingtalk_connect_sync_dept_attr_name"`
+	DingTalkDeptGroupMap                   string `json:"dingtalk_dept_group_map"`
 
 	// WeChat Connect OAuth 登录
 	WeChatConnectEnabled             bool   `json:"wechat_connect_enabled"`
@@ -941,6 +942,28 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		if req.DingTalkConnectSyncDeptAttrName == "" {
 			req.DingTalkConnectSyncDeptAttrName = "钉钉部门"
 		}
+		// 部门映射：JSON 对象 {"<dept_id>": "<部门名>"}，仅允许合法格式；
+		// 钉钉登录时按 dept_id 匹配，命中则绑定对应专属订阅分组。
+		req.DingTalkDeptGroupMap = strings.TrimSpace(req.DingTalkDeptGroupMap)
+		if req.DingTalkDeptGroupMap != "" {
+			var rawMap map[string]string
+			if err := json.Unmarshal([]byte(req.DingTalkDeptGroupMap), &rawMap); err != nil {
+				response.BadRequest(c, "dingtalk_dept_group_map must be a JSON object like {\"123\": \"部门名\"}")
+				return
+			}
+			for key, name := range rawMap {
+				trimmedKey := strings.TrimSpace(key)
+				id, err := strconv.ParseInt(trimmedKey, 10, 64)
+				if err != nil || id <= 1 {
+					response.BadRequest(c, "dingtalk_dept_group_map key must be a numeric dingtalk dept_id > 1: "+trimmedKey)
+					return
+				}
+				if strings.TrimSpace(name) == "" {
+					response.BadRequest(c, "dingtalk_dept_group_map value (dept name) must not be empty for dept_id "+trimmedKey)
+					return
+				}
+			}
+		}
 	}
 
 	if req.WeChatConnectEnabled {
@@ -1560,6 +1583,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DingTalkConnectSyncCorpEmailAttrName:   req.DingTalkConnectSyncCorpEmailAttrName,
 		DingTalkConnectSyncDisplayNameAttrName: req.DingTalkConnectSyncDisplayNameAttrName,
 		DingTalkConnectSyncDeptAttrName:        req.DingTalkConnectSyncDeptAttrName,
+		DingTalkDeptGroupMap:                   req.DingTalkDeptGroupMap,
 		WeChatConnectEnabled:                   req.WeChatConnectEnabled,
 		WeChatConnectAppID:                     req.WeChatConnectAppID,
 		WeChatConnectAppSecret:                 req.WeChatConnectAppSecret,
@@ -2170,6 +2194,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DingTalkConnectSyncCorpEmailAttrName:                   updatedSettings.DingTalkConnectSyncCorpEmailAttrName,
 		DingTalkConnectSyncDisplayNameAttrName:                 updatedSettings.DingTalkConnectSyncDisplayNameAttrName,
 		DingTalkConnectSyncDeptAttrName:                        updatedSettings.DingTalkConnectSyncDeptAttrName,
+		DingTalkDeptGroupMap:                                   updatedSettings.DingTalkDeptGroupMap,
 		WeChatConnectEnabled:                                   updatedSettings.WeChatConnectEnabled,
 		WeChatConnectAppID:                                     updatedSettings.WeChatConnectAppID,
 		WeChatConnectAppSecretConfigured:                       updatedSettings.WeChatConnectAppSecretConfigured,
