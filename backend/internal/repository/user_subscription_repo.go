@@ -48,6 +48,7 @@ func (r *userSubscriptionRepository) Create(ctx context.Context, sub *service.Us
 	if sub.Status != "" {
 		builder.SetStatus(sub.Status)
 	}
+	builder.SetAutoRenew(sub.AutoRenew)
 	if !sub.AssignedAt.IsZero() {
 		builder.SetAssignedAt(sub.AssignedAt)
 	}
@@ -143,6 +144,7 @@ func (r *userSubscriptionRepository) Update(ctx context.Context, sub *service.Us
 		SetStartsAt(sub.StartsAt).
 		SetExpiresAt(sub.ExpiresAt).
 		SetStatus(sub.Status).
+		SetAutoRenew(sub.AutoRenew).
 		SetNillableDailyWindowStart(sub.DailyWindowStart).
 		SetNillableWeeklyWindowStart(sub.WeeklyWindowStart).
 		SetNillableMonthlyWindowStart(sub.MonthlyWindowStart).
@@ -514,6 +516,48 @@ func (r *userSubscriptionRepository) BatchUpdateExpiredStatus(ctx context.Contex
 	return int64(n), err
 }
 
+func (r *userSubscriptionRepository) UpdateAutoRenew(ctx context.Context, subscriptionID int64, enabled bool) (*service.UserSubscription, error) {
+	client := clientFromContext(ctx, r.client)
+	m, err := client.UserSubscription.UpdateOneID(subscriptionID).
+		SetAutoRenew(enabled).
+		SetUpdatedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
+	}
+	return userSubscriptionEntityToService(m), nil
+}
+
+// ListDueAutoRenew 分页列出开启自动续期且临近到期（expires_at <= before）的订阅，
+// 用于自动续期扫描。覆盖 active 与 expired 状态（残缺事务/并发下允许已过期未标记）。
+func (r *userSubscriptionRepository) ListDueAutoRenew(ctx context.Context, before time.Time, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
+	client := clientFromContext(ctx, r.client)
+	q := client.UserSubscription.Query().Where(
+		usersubscription.AutoRenewEQ(true),
+		usersubscription.DeletedAtIsNil(),
+		usersubscription.StatusIn(service.SubscriptionStatusActive, service.SubscriptionStatusExpired),
+		usersubscription.ExpiresAtLTE(before),
+	)
+
+	total, err := q.Clone().Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	subs, err := q.
+		WithUser().
+		WithGroup().
+		Order(dbent.Asc(usersubscription.FieldExpiresAt)).
+		Offset(params.Offset()).
+		Limit(params.Limit()).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return userSubscriptionEntitiesToService(subs), paginationResultFromTotal(int64(total), params), nil
+}
+
 // Extra repository helpers (currently used only by integration tests).
 
 func (r *userSubscriptionRepository) ListExpired(ctx context.Context) ([]service.UserSubscription, error) {
@@ -647,6 +691,7 @@ func userSubscriptionEntityToServiceWithStatusMapping(m *dbent.UserSubscription,
 		StartsAt:           m.StartsAt,
 		ExpiresAt:          m.ExpiresAt,
 		Status:             status,
+		AutoRenew:          m.AutoRenew,
 		DailyWindowStart:   m.DailyWindowStart,
 		WeeklyWindowStart:  m.WeeklyWindowStart,
 		MonthlyWindowStart: m.MonthlyWindowStart,
