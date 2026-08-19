@@ -46,6 +46,10 @@ func (UserSubscription) Fields() []ent.Field {
 			MaxLen(20).
 			Default(domain.SubscriptionStatusActive),
 
+		// 是否开启自动续期（钉钉用户免费自动续期）；关闭后不再自动续期。
+		field.Bool("auto_renew").
+			Default(true),
+
 		field.Time("daily_window_start").
 			Optional().
 			Nillable().

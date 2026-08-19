@@ -127,6 +127,20 @@ func (_u *UserSubscriptionUpdate) SetNillableStatus(v *string) *UserSubscription
 	return _u
 }
 
+// SetAutoRenew sets the "auto_renew" field.
+func (_u *UserSubscriptionUpdate) SetAutoRenew(v bool) *UserSubscriptionUpdate {
+	_u.mutation.SetAutoRenew(v)
+	return _u
+}
+
+// SetNillableAutoRenew sets the "auto_renew" field if the given value is not nil.
+func (_u *UserSubscriptionUpdate) SetNillableAutoRenew(v *bool) *UserSubscriptionUpdate {
+	if v != nil {
+		_u.SetAutoRenew(*v)
+	}
+	return _u
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (_u *UserSubscriptionUpdate) SetDailyWindowStart(v time.Time) *UserSubscriptionUpdate {
 	_u.mutation.SetDailyWindowStart(v)
@@ -480,6 +494,9 @@ func (_u *UserSubscriptionUpdate) sqlSave(ctx context.Context) (_node int, err e
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.AutoRenew(); ok {
+		_spec.SetField(usersubscription.FieldAutoRenew, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.DailyWindowStart(); ok {
 		_spec.SetField(usersubscription.FieldDailyWindowStart, field.TypeTime, value)
 	}
@@ -769,6 +786,20 @@ func (_u *UserSubscriptionUpdateOne) SetStatus(v string) *UserSubscriptionUpdate
 func (_u *UserSubscriptionUpdateOne) SetNillableStatus(v *string) *UserSubscriptionUpdateOne {
 	if v != nil {
 		_u.SetStatus(*v)
+	}
+	return _u
+}
+
+// SetAutoRenew sets the "auto_renew" field.
+func (_u *UserSubscriptionUpdateOne) SetAutoRenew(v bool) *UserSubscriptionUpdateOne {
+	_u.mutation.SetAutoRenew(v)
+	return _u
+}
+
+// SetNillableAutoRenew sets the "auto_renew" field if the given value is not nil.
+func (_u *UserSubscriptionUpdateOne) SetNillableAutoRenew(v *bool) *UserSubscriptionUpdateOne {
+	if v != nil {
+		_u.SetAutoRenew(*v)
 	}
 	return _u
 }
@@ -1155,6 +1186,9 @@ func (_u *UserSubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *UserSu
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AutoRenew(); ok {
+		_spec.SetField(usersubscription.FieldAutoRenew, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.DailyWindowStart(); ok {
 		_spec.SetField(usersubscription.FieldDailyWindowStart, field.TypeTime, value)

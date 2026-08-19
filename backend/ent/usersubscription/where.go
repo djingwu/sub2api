@@ -95,6 +95,11 @@ func Status(v string) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldStatus, v))
 }
 
+// AutoRenew applies equality check predicate on the "auto_renew" field. It's identical to AutoRenewEQ.
+func AutoRenew(v bool) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldAutoRenew, v))
+}
+
 // DailyWindowStart applies equality check predicate on the "daily_window_start" field. It's identical to DailyWindowStartEQ.
 func DailyWindowStart(v time.Time) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldDailyWindowStart, v))
@@ -453,6 +458,16 @@ func StatusEqualFold(v string) predicate.UserSubscription {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// AutoRenewEQ applies the EQ predicate on the "auto_renew" field.
+func AutoRenewEQ(v bool) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldAutoRenew, v))
+}
+
+// AutoRenewNEQ applies the NEQ predicate on the "auto_renew" field.
+func AutoRenewNEQ(v bool) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldAutoRenew, v))
 }
 
 // DailyWindowStartEQ applies the EQ predicate on the "daily_window_start" field.

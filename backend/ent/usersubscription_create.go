@@ -105,6 +105,20 @@ func (_c *UserSubscriptionCreate) SetNillableStatus(v *string) *UserSubscription
 	return _c
 }
 
+// SetAutoRenew sets the "auto_renew" field.
+func (_c *UserSubscriptionCreate) SetAutoRenew(v bool) *UserSubscriptionCreate {
+	_c.mutation.SetAutoRenew(v)
+	return _c
+}
+
+// SetNillableAutoRenew sets the "auto_renew" field if the given value is not nil.
+func (_c *UserSubscriptionCreate) SetNillableAutoRenew(v *bool) *UserSubscriptionCreate {
+	if v != nil {
+		_c.SetAutoRenew(*v)
+	}
+	return _c
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (_c *UserSubscriptionCreate) SetDailyWindowStart(v time.Time) *UserSubscriptionCreate {
 	_c.mutation.SetDailyWindowStart(v)
@@ -330,6 +344,10 @@ func (_c *UserSubscriptionCreate) defaults() error {
 		v := usersubscription.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.AutoRenew(); !ok {
+		v := usersubscription.DefaultAutoRenew
+		_c.mutation.SetAutoRenew(v)
+	}
 	if _, ok := _c.mutation.DailyUsageUsd(); !ok {
 		v := usersubscription.DefaultDailyUsageUsd
 		_c.mutation.SetDailyUsageUsd(v)
@@ -379,6 +397,9 @@ func (_c *UserSubscriptionCreate) check() error {
 		if err := usersubscription.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.AutoRenew(); !ok {
+		return &ValidationError{Name: "auto_renew", err: errors.New(`ent: missing required field "UserSubscription.auto_renew"`)}
 	}
 	if _, ok := _c.mutation.DailyUsageUsd(); !ok {
 		return &ValidationError{Name: "daily_usage_usd", err: errors.New(`ent: missing required field "UserSubscription.daily_usage_usd"`)}
@@ -448,6 +469,10 @@ func (_c *UserSubscriptionCreate) createSpec() (*UserSubscription, *sqlgraph.Cre
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeString, value)
 		_node.Status = value
+	}
+	if value, ok := _c.mutation.AutoRenew(); ok {
+		_spec.SetField(usersubscription.FieldAutoRenew, field.TypeBool, value)
+		_node.AutoRenew = value
 	}
 	if value, ok := _c.mutation.DailyWindowStart(); ok {
 		_spec.SetField(usersubscription.FieldDailyWindowStart, field.TypeTime, value)
@@ -687,6 +712,18 @@ func (u *UserSubscriptionUpsert) SetStatus(v string) *UserSubscriptionUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *UserSubscriptionUpsert) UpdateStatus() *UserSubscriptionUpsert {
 	u.SetExcluded(usersubscription.FieldStatus)
+	return u
+}
+
+// SetAutoRenew sets the "auto_renew" field.
+func (u *UserSubscriptionUpsert) SetAutoRenew(v bool) *UserSubscriptionUpsert {
+	u.Set(usersubscription.FieldAutoRenew, v)
+	return u
+}
+
+// UpdateAutoRenew sets the "auto_renew" field to the value that was provided on create.
+func (u *UserSubscriptionUpsert) UpdateAutoRenew() *UserSubscriptionUpsert {
+	u.SetExcluded(usersubscription.FieldAutoRenew)
 	return u
 }
 
@@ -993,6 +1030,20 @@ func (u *UserSubscriptionUpsertOne) SetStatus(v string) *UserSubscriptionUpsertO
 func (u *UserSubscriptionUpsertOne) UpdateStatus() *UserSubscriptionUpsertOne {
 	return u.Update(func(s *UserSubscriptionUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetAutoRenew sets the "auto_renew" field.
+func (u *UserSubscriptionUpsertOne) SetAutoRenew(v bool) *UserSubscriptionUpsertOne {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.SetAutoRenew(v)
+	})
+}
+
+// UpdateAutoRenew sets the "auto_renew" field to the value that was provided on create.
+func (u *UserSubscriptionUpsertOne) UpdateAutoRenew() *UserSubscriptionUpsertOne {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.UpdateAutoRenew()
 	})
 }
 
@@ -1491,6 +1542,20 @@ func (u *UserSubscriptionUpsertBulk) SetStatus(v string) *UserSubscriptionUpsert
 func (u *UserSubscriptionUpsertBulk) UpdateStatus() *UserSubscriptionUpsertBulk {
 	return u.Update(func(s *UserSubscriptionUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetAutoRenew sets the "auto_renew" field.
+func (u *UserSubscriptionUpsertBulk) SetAutoRenew(v bool) *UserSubscriptionUpsertBulk {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.SetAutoRenew(v)
+	})
+}
+
+// UpdateAutoRenew sets the "auto_renew" field to the value that was provided on create.
+func (u *UserSubscriptionUpsertBulk) UpdateAutoRenew() *UserSubscriptionUpsertBulk {
+	return u.Update(func(s *UserSubscriptionUpsert) {
+		s.UpdateAutoRenew()
 	})
 }
 

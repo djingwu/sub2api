@@ -115,6 +115,14 @@ func (r *subscriptionExpiryRepoStub) BatchUpdateExpiredStatus(context.Context) (
 	return 0, nil
 }
 
+func (r *subscriptionExpiryRepoStub) UpdateAutoRenew(context.Context, int64, bool) (*UserSubscription, error) {
+	return nil, nil
+}
+
+func (r *subscriptionExpiryRepoStub) ListDueAutoRenew(context.Context, time.Time, pagination.PaginationParams) ([]UserSubscription, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
 type subscriptionExpirySettingRepoStub struct {
 	values map[string]string
 	err    error

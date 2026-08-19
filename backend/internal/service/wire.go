@@ -397,6 +397,15 @@ func ProvideSubscriptionExpiryService(userSubRepo UserSubscriptionRepository, se
 	return svc
 }
 
+// ProvideSubscriptionAutoRenewService creates and starts SubscriptionAutoRenewService
+// (钉钉用户免费自动续期，leader lock 防止多实例重复续期)。
+func ProvideSubscriptionAutoRenewService(userSubRepo UserSubscriptionRepository, userRepo UserRepository, subscriptionSvc *SubscriptionService, lockCache LeaderLockCache, db *sql.DB) *SubscriptionAutoRenewService {
+	svc := NewSubscriptionAutoRenewService(userSubRepo, userRepo, subscriptionSvc, time.Minute)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
+	return svc
+}
+
 // ProvideTimingWheelService creates and starts TimingWheelService
 func ProvideTimingWheelService() (*TimingWheelService, error) {
 	svc, err := NewTimingWheelService()
@@ -878,6 +887,7 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAICodexVersionSyncService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,
+	ProvideSubscriptionAutoRenewService,
 	ProvideTimingWheelService,
 	ProvideDashboardAggregationService,
 	ProvideUsageCleanupService,

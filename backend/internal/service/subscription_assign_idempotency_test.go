@@ -179,6 +179,12 @@ func (userSubRepoNoop) IncrementUsage(context.Context, int64, float64) error {
 func (userSubRepoNoop) BatchUpdateExpiredStatus(context.Context) (int64, error) {
 	panic("unexpected BatchUpdateExpiredStatus call")
 }
+func (userSubRepoNoop) UpdateAutoRenew(context.Context, int64, bool) (*UserSubscription, error) {
+	panic("unexpected UpdateAutoRenew call")
+}
+func (userSubRepoNoop) ListDueAutoRenew(context.Context, time.Time, pagination.PaginationParams) ([]UserSubscription, *pagination.PaginationResult, error) {
+	panic("unexpected ListDueAutoRenew call")
+}
 
 type subscriptionUserSubRepoStub struct {
 	userSubRepoNoop

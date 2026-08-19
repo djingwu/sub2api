@@ -132,7 +132,10 @@ export default {
     resetIn: '{time} 后重置',
     quotaEndsIn: '额度将在 {time} 后结束',
     windowNotActive: '等待首次使用',
-    usageOf: '已用 {used} / {limit}'
+    usageOf: '已用 {used} / {limit}',
+    autoRenew: '自动续期',
+    autoRenewDesc: '到期后使用钉钉抵扣额度自动续期，仅支持钉钉账号',
+    autoRenewUpdateFailed: '更新自动续期失败'
   },
 
   // Onboarding Tour

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -720,6 +721,110 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 // GetByID 根据ID获取订阅
 func (s *SubscriptionService) GetByID(ctx context.Context, id int64) (*UserSubscription, error) {
 	return s.userSubRepo.GetByID(ctx, id)
+}
+
+// 自动续期提前量：到期前 24 小时内开始扫描续期，避免服务中断。
+const subscriptionAutoRenewLeadTime = 24 * time.Hour
+
+// 自动续期备注前缀：用于在订阅备注中标记免费自动续期。
+const subscriptionAutoRenewNote = "钉钉免费自动续期"
+
+// defaultAutoRenewValidityDays 分组无在售套餐时的默认续期天数。
+const defaultAutoRenewValidityDays = 30
+
+// SetAutoRenew 开启/关闭订阅自动续期。
+func (s *SubscriptionService) SetAutoRenew(ctx context.Context, subscriptionID int64, enabled bool) (*UserSubscription, error) {
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	if sub.AutoRenew == enabled {
+		s.InvalidateSubCache(sub.UserID, sub.GroupID)
+		return sub, nil
+	}
+
+	updated, err := s.userSubRepo.UpdateAutoRenew(ctx, subscriptionID, enabled)
+	if err != nil {
+		return nil, err
+	}
+	// 从 DB 重新加载关联（User/Group），保持返回结构与 GetByID 一致。
+	fresh, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return updated, err
+	}
+	s.InvalidateSubCache(sub.UserID, sub.GroupID)
+	if s.billingCacheService != nil {
+		userID, groupID := sub.UserID, sub.GroupID
+		go func() {
+			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
+		}()
+	}
+	return fresh, nil
+}
+
+// FreeRenewSubscription 免费续期订阅（用于钉钉用户自动续期）：
+//   - 未过期：从当前过期时间累加 validityDays
+//   - 已过期：从当前时间重新激活并计算新的过期时间
+func (s *SubscriptionService) FreeRenewSubscription(ctx context.Context, subscriptionID int64, validityDays int, note string) (*UserSubscription, error) {
+	if validityDays <= 0 {
+		validityDays = defaultAutoRenewValidityDays
+	}
+	if validityDays > MaxValidityDays {
+		validityDays = MaxValidityDays
+	}
+	if err := s.updateExistingSubscriptionTerm(ctx, subscriptionID, validityDays, note, false); err != nil {
+		return nil, err
+	}
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.invalidateSubscriptionCaches(sub.UserID, sub.GroupID); err != nil {
+		return nil, err
+	}
+	return sub, nil
+}
+
+// AutoRenewValidityDays 返回分组自动续期天数：
+// 取该分组在售套餐的最短有效期，无套餐时返回默认值。
+func (s *SubscriptionService) AutoRenewValidityDays(ctx context.Context, groupID int64) int {
+	if s.entClient != nil {
+		plans, err := s.entClient.SubscriptionPlan.Query().
+			Where(
+				subscriptionplan.GroupIDEQ(groupID),
+				subscriptionplan.ForSaleEQ(true),
+			).
+			All(ctx)
+		if err == nil {
+			days := 0
+			for _, p := range plans {
+				if p == nil {
+					continue
+				}
+				d := p.ValidityDays
+				if d <= 0 {
+					d = defaultAutoRenewValidityDays
+				}
+				if days == 0 || d < days {
+					days = d
+				}
+			}
+			if days > 0 {
+				return days
+			}
+		}
+	}
+	return defaultAutoRenewValidityDays
+}
+
+// userIsDingTalk 判断用户是否为钉钉用户（仅按注册来源判断；绑定身份的检查在自动续期服务中补充）。
+func (s *SubscriptionService) userIsDingTalk(user *User) bool {
+	if user == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(user.SignupSource), "dingtalk")
 }
 
 // GetActiveSubscription 获取用户对特定分组的有效订阅

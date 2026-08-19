@@ -17,6 +17,9 @@ type UserSubscription struct {
 	ExpiresAt time.Time
 	Status    string
 
+	// AutoRenew 是否开启自动续期（钉钉用户免费自动续期）。
+	AutoRenew bool
+
 	DailyWindowStart   *time.Time
 	WeeklyWindowStart  *time.Time
 	MonthlyWindowStart *time.Time

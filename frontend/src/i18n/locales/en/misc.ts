@@ -135,7 +135,10 @@ export default {
     resetIn: 'Resets in {time}',
     quotaEndsIn: 'Quota ends in {time}',
     windowNotActive: 'Awaiting first use',
-    usageOf: '{used} of {limit}'
+    usageOf: '{used} of {limit}',
+    autoRenew: 'Auto-renewal',
+    autoRenewDesc: 'Renew automatically with DingTalk credits upon expiry. Only available for DingTalk accounts',
+    autoRenewUpdateFailed: 'Failed to update auto-renewal'
   },
 
   // Onboarding Tour

@@ -67,10 +67,25 @@ export async function getSubscriptionProgress(
   return response.data
 }
 
+/**
+ * Enable or disable auto-renewal for a subscription
+ */
+export async function updateAutoRenew(
+  subscriptionId: number,
+  enabled: boolean
+): Promise<UserSubscription> {
+  const response = await apiClient.put<UserSubscription>(
+    `/subscriptions/${subscriptionId}/auto-renew`,
+    { enabled }
+  )
+  return response.data
+}
+
 export default {
   getMySubscriptions,
   getActiveSubscriptions,
   getSubscriptionsProgress,
   getSubscriptionSummary,
-  getSubscriptionProgress
+  getSubscriptionProgress,
+  updateAutoRenew
 }

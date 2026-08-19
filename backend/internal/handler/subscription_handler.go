@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -185,4 +188,45 @@ func (h *SubscriptionHandler) GetSummary(c *gin.Context) {
 	}
 
 	response.Success(c, summary)
+}
+
+// UpdateAutoRenew 开启/关闭当前用户的订阅自动续期。
+// PUT /api/v1/subscriptions/:id/auto-renew
+func (h *SubscriptionHandler) UpdateAutoRenew(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+
+	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || subscriptionID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_INPUT", "invalid subscription id"))
+		return
+	}
+
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_INPUT", "enabled is required"))
+		return
+	}
+
+	sub, err := h.subscriptionService.GetByID(c.Request.Context(), subscriptionID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if sub.UserID != subject.UserID {
+		response.ErrorFrom(c, infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found"))
+		return
+	}
+
+	updated, err := h.subscriptionService.SetAutoRenew(c.Request.Context(), subscriptionID, *req.Enabled)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.UserSubscriptionFromService(updated))
 }

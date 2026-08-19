@@ -100,6 +100,35 @@
               }}</span>
             </div>
 
+            <!-- Auto-Renewal Toggle -->
+            <div
+              v-if="subscription.status === 'active' && subscription.expires_at"
+              class="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 dark:border-dark-700 dark:bg-dark-700/50"
+            >
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('userSubscriptions.autoRenew') }}
+                </p>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('userSubscriptions.autoRenewDesc') }}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="subscription.auto_renew"
+                :disabled="togglingAutoRenewId === subscription.id"
+                class="relative ml-3 inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60 dark:focus-visible:ring-offset-dark-800"
+                :class="subscription.auto_renew ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-dark-600'"
+                @click="toggleAutoRenew(subscription)"
+              >
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                  :class="subscription.auto_renew ? 'translate-x-6' : 'translate-x-1'"
+                ></span>
+              </button>
+            </div>
+
             <!-- Daily Usage -->
             <div v-if="subscription.group?.daily_limit_usd" class="space-y-2">
               <div class="flex items-center justify-between">
@@ -282,6 +311,22 @@ const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
+const togglingAutoRenewId = ref<number | null>(null)
+
+async function toggleAutoRenew(subscription: UserSubscription) {
+  if (togglingAutoRenewId.value !== null) return
+  togglingAutoRenewId.value = subscription.id
+  try {
+    const updated = await subscriptionsAPI.updateAutoRenew(subscription.id, !subscription.auto_renew)
+    const index = subscriptions.value.findIndex((s) => s.id === updated.id)
+    if (index !== -1) subscriptions.value[index] = updated
+  } catch (error) {
+    console.error('Failed to update auto-renew:', error)
+    appStore.showError(t('userSubscriptions.autoRenewUpdateFailed'))
+  } finally {
+    togglingAutoRenewId.value = null
+  }
+}
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
   return hasPeakRate(subscription.group)

@@ -92,6 +92,7 @@ func provideCleanup(
 	codexVersionSync *service.OpenAICodexVersionSyncService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
+	subscriptionAutoRenew *service.SubscriptionAutoRenewService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	batchImageCleanup *service.BatchImageCleanupService,
@@ -255,6 +256,12 @@ func provideCleanup(
 			}},
 			{"SubscriptionExpiryService", func() error {
 				subscriptionExpiry.Stop()
+				return nil
+			}},
+			{"SubscriptionAutoRenewService", func() error {
+				if subscriptionAutoRenew != nil {
+					subscriptionAutoRenew.Stop()
+				}
 				return nil
 			}},
 			{"SubscriptionService", func() error {

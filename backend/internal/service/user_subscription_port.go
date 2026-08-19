@@ -42,4 +42,9 @@ type UserSubscriptionRepository interface {
 	IncrementUsage(ctx context.Context, id int64, costUSD float64) error
 
 	BatchUpdateExpiredStatus(ctx context.Context) (int64, error)
+
+	// UpdateAutoRenew 更新订阅自动续期开关。
+	UpdateAutoRenew(ctx context.Context, subscriptionID int64, enabled bool) (*UserSubscription, error)
+	// ListDueAutoRenew 分页列出开启自动续期且 expires_at <= before 的订阅（含 User/Group 关联）。
+	ListDueAutoRenew(ctx context.Context, before time.Time, params pagination.PaginationParams) ([]UserSubscription, *pagination.PaginationResult, error)
 }

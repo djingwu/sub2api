@@ -264,6 +264,12 @@ func (f fakeGoogleSubscriptionRepo) IncrementUsage(ctx context.Context, id int64
 func (f fakeGoogleSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	return 0, errors.New("not implemented")
 }
+func (f fakeGoogleSubscriptionRepo) UpdateAutoRenew(ctx context.Context, subscriptionID int64, enabled bool) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+func (f fakeGoogleSubscriptionRepo) ListDueAutoRenew(ctx context.Context, before time.Time, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
 
 type googleErrorResponse struct {
 	Error struct {
