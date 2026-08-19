@@ -65,6 +65,10 @@ type Account struct {
 	GroupIDs      []int64
 	Groups        []*Group
 
+	// AllowedUserIDs 账号用户白名单：非空时仅白名单内用户可使用该账号。
+	// 空 = 分组内所有用户可用（向后兼容）。
+	AllowedUserIDs []int64
+
 	// model_mapping 热路径缓存（非持久化字段）
 	modelMappingCache               map[string]string
 	modelMappingCacheReady          bool

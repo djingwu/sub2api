@@ -2707,6 +2707,9 @@
         data-tour="account-form-groups"
       />
 
+      <!-- Allowed Users (账号用户白名单) - 仅标准模式显示 -->
+      <UserSelector v-if="!authStore.isSimpleMode" v-model="form.allowed_user_ids" />
+
     </form>
 
     <template #footer>
@@ -2785,6 +2788,7 @@ import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
+import UserSelector from '@/components/account/UserSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
@@ -3428,6 +3432,7 @@ const form = reactive({
   rate_multiplier: 1,
   status: 'active' as 'active' | 'inactive' | 'error',
   group_ids: [] as number[],
+  allowed_user_ids: [] as number[],
   expires_at: null as number | null
 })
 
@@ -3538,6 +3543,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     ? newAccount.status
     : 'active'
   form.group_ids = newAccount.group_ids || []
+  form.allowed_user_ids = newAccount.allowed_user_ids || []
   form.expires_at = newAccount.expires_at ?? null
 
   // Load intercept warmup requests setting (applies to all account types)

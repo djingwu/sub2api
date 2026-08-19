@@ -439,6 +439,9 @@ func AccountFromService(a *service.Account) *Account {
 			out.Groups = append(out.Groups, GroupFromServiceShallow(g))
 		}
 	}
+	if len(a.AllowedUserIDs) > 0 {
+		out.AllowedUserIDs = append([]int64(nil), a.AllowedUserIDs...)
+	}
 	return out
 }
 
@@ -806,6 +809,7 @@ func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscrip
 		StartsAt:           sub.StartsAt,
 		ExpiresAt:          sub.ExpiresAt,
 		Status:             sub.Status,
+		AutoRenew:          sub.AutoRenew,
 		DailyWindowStart:   sub.DailyWindowStart,
 		WeeklyWindowStart:  sub.WeeklyWindowStart,
 		MonthlyWindowStart: sub.MonthlyWindowStart,

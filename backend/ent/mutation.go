@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountalloweduser"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -66,6 +67,7 @@ const (
 	// Node types.
 	TypeAPIKey                        = "APIKey"
 	TypeAccount                       = "Account"
+	TypeAccountAllowedUser            = "AccountAllowedUser"
 	TypeAccountGroup                  = "AccountGroup"
 	TypeAnnouncement                  = "Announcement"
 	TypeAnnouncementRead              = "AnnouncementRead"
@@ -2323,6 +2325,9 @@ type AccountMutation struct {
 	groups                      map[int64]struct{}
 	removedgroups               map[int64]struct{}
 	clearedgroups               bool
+	allowed_users               map[int64]struct{}
+	removedallowed_users        map[int64]struct{}
+	clearedallowed_users        bool
 	proxy                       *int64
 	clearedproxy                bool
 	parent                      *int64
@@ -3929,6 +3934,60 @@ func (m *AccountMutation) ResetGroups() {
 	m.removedgroups = nil
 }
 
+// AddAllowedUserIDs adds the "allowed_users" edge to the User entity by ids.
+func (m *AccountMutation) AddAllowedUserIDs(ids ...int64) {
+	if m.allowed_users == nil {
+		m.allowed_users = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.allowed_users[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAllowedUsers clears the "allowed_users" edge to the User entity.
+func (m *AccountMutation) ClearAllowedUsers() {
+	m.clearedallowed_users = true
+}
+
+// AllowedUsersCleared reports if the "allowed_users" edge to the User entity was cleared.
+func (m *AccountMutation) AllowedUsersCleared() bool {
+	return m.clearedallowed_users
+}
+
+// RemoveAllowedUserIDs removes the "allowed_users" edge to the User entity by IDs.
+func (m *AccountMutation) RemoveAllowedUserIDs(ids ...int64) {
+	if m.removedallowed_users == nil {
+		m.removedallowed_users = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.allowed_users, ids[i])
+		m.removedallowed_users[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAllowedUsers returns the removed IDs of the "allowed_users" edge to the User entity.
+func (m *AccountMutation) RemovedAllowedUsersIDs() (ids []int64) {
+	for id := range m.removedallowed_users {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AllowedUsersIDs returns the "allowed_users" edge IDs in the mutation.
+func (m *AccountMutation) AllowedUsersIDs() (ids []int64) {
+	for id := range m.allowed_users {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAllowedUsers resets all changes to the "allowed_users" edge.
+func (m *AccountMutation) ResetAllowedUsers() {
+	m.allowed_users = nil
+	m.clearedallowed_users = false
+	m.removedallowed_users = nil
+}
+
 // ClearProxy clears the "proxy" edge to the Proxy entity.
 func (m *AccountMutation) ClearProxy() {
 	m.clearedproxy = true
@@ -4915,9 +4974,12 @@ func (m *AccountMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AccountMutation) AddedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.groups != nil {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.allowed_users != nil {
+		edges = append(edges, account.EdgeAllowedUsers)
 	}
 	if m.proxy != nil {
 		edges = append(edges, account.EdgeProxy)
@@ -4941,6 +5003,12 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 	case account.EdgeGroups:
 		ids := make([]ent.Value, 0, len(m.groups))
 		for id := range m.groups {
+			ids = append(ids, id)
+		}
+		return ids
+	case account.EdgeAllowedUsers:
+		ids := make([]ent.Value, 0, len(m.allowed_users))
+		for id := range m.allowed_users {
 			ids = append(ids, id)
 		}
 		return ids
@@ -4970,9 +5038,12 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AccountMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.removedgroups != nil {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.removedallowed_users != nil {
+		edges = append(edges, account.EdgeAllowedUsers)
 	}
 	if m.removedchildren != nil {
 		edges = append(edges, account.EdgeChildren)
@@ -4990,6 +5061,12 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 	case account.EdgeGroups:
 		ids := make([]ent.Value, 0, len(m.removedgroups))
 		for id := range m.removedgroups {
+			ids = append(ids, id)
+		}
+		return ids
+	case account.EdgeAllowedUsers:
+		ids := make([]ent.Value, 0, len(m.removedallowed_users))
+		for id := range m.removedallowed_users {
 			ids = append(ids, id)
 		}
 		return ids
@@ -5011,9 +5088,12 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AccountMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.clearedgroups {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.clearedallowed_users {
+		edges = append(edges, account.EdgeAllowedUsers)
 	}
 	if m.clearedproxy {
 		edges = append(edges, account.EdgeProxy)
@@ -5036,6 +5116,8 @@ func (m *AccountMutation) EdgeCleared(name string) bool {
 	switch name {
 	case account.EdgeGroups:
 		return m.clearedgroups
+	case account.EdgeAllowedUsers:
+		return m.clearedallowed_users
 	case account.EdgeProxy:
 		return m.clearedproxy
 	case account.EdgeParent:
@@ -5069,6 +5151,9 @@ func (m *AccountMutation) ResetEdge(name string) error {
 	case account.EdgeGroups:
 		m.ResetGroups()
 		return nil
+	case account.EdgeAllowedUsers:
+		m.ResetAllowedUsers()
+		return nil
 	case account.EdgeProxy:
 		m.ResetProxy()
 		return nil
@@ -5083,6 +5168,423 @@ func (m *AccountMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown Account edge %s", name)
+}
+
+// AccountAllowedUserMutation represents an operation that mutates the AccountAllowedUser nodes in the graph.
+type AccountAllowedUserMutation struct {
+	config
+	op             Op
+	typ            string
+	created_at     *time.Time
+	clearedFields  map[string]struct{}
+	account        *int64
+	clearedaccount bool
+	user           *int64
+	cleareduser    bool
+	done           bool
+	oldValue       func(context.Context) (*AccountAllowedUser, error)
+	predicates     []predicate.AccountAllowedUser
+}
+
+var _ ent.Mutation = (*AccountAllowedUserMutation)(nil)
+
+// accountalloweduserOption allows management of the mutation configuration using functional options.
+type accountalloweduserOption func(*AccountAllowedUserMutation)
+
+// newAccountAllowedUserMutation creates new mutation for the AccountAllowedUser entity.
+func newAccountAllowedUserMutation(c config, op Op, opts ...accountalloweduserOption) *AccountAllowedUserMutation {
+	m := &AccountAllowedUserMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountAllowedUser,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountAllowedUserMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountAllowedUserMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *AccountAllowedUserMutation) SetAccountID(i int64) {
+	m.account = &i
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *AccountAllowedUserMutation) AccountID() (r int64, exists bool) {
+	v := m.account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *AccountAllowedUserMutation) ResetAccountID() {
+	m.account = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *AccountAllowedUserMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AccountAllowedUserMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AccountAllowedUserMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountAllowedUserMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountAllowedUserMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountAllowedUserMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearAccount clears the "account" edge to the Account entity.
+func (m *AccountAllowedUserMutation) ClearAccount() {
+	m.clearedaccount = true
+	m.clearedFields[accountalloweduser.FieldAccountID] = struct{}{}
+}
+
+// AccountCleared reports if the "account" edge to the Account entity was cleared.
+func (m *AccountAllowedUserMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *AccountAllowedUserMutation) AccountIDs() (ids []int64) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *AccountAllowedUserMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *AccountAllowedUserMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[accountalloweduser.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *AccountAllowedUserMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *AccountAllowedUserMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *AccountAllowedUserMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the AccountAllowedUserMutation builder.
+func (m *AccountAllowedUserMutation) Where(ps ...predicate.AccountAllowedUser) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountAllowedUserMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountAllowedUserMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountAllowedUser, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountAllowedUserMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountAllowedUserMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountAllowedUser).
+func (m *AccountAllowedUserMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountAllowedUserMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.account != nil {
+		fields = append(fields, accountalloweduser.FieldAccountID)
+	}
+	if m.user != nil {
+		fields = append(fields, accountalloweduser.FieldUserID)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accountalloweduser.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountAllowedUserMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountalloweduser.FieldAccountID:
+		return m.AccountID()
+	case accountalloweduser.FieldUserID:
+		return m.UserID()
+	case accountalloweduser.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountAllowedUserMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	return nil, errors.New("edge schema AccountAllowedUser does not support getting old values")
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountAllowedUserMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountalloweduser.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case accountalloweduser.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case accountalloweduser.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountAllowedUser field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountAllowedUserMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountAllowedUserMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountAllowedUserMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AccountAllowedUser numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountAllowedUserMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountAllowedUserMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountAllowedUserMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AccountAllowedUser nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountAllowedUserMutation) ResetField(name string) error {
+	switch name {
+	case accountalloweduser.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case accountalloweduser.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case accountalloweduser.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountAllowedUser field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountAllowedUserMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.account != nil {
+		edges = append(edges, accountalloweduser.EdgeAccount)
+	}
+	if m.user != nil {
+		edges = append(edges, accountalloweduser.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountAllowedUserMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accountalloweduser.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
+	case accountalloweduser.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountAllowedUserMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountAllowedUserMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountAllowedUserMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedaccount {
+		edges = append(edges, accountalloweduser.EdgeAccount)
+	}
+	if m.cleareduser {
+		edges = append(edges, accountalloweduser.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountAllowedUserMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accountalloweduser.EdgeAccount:
+		return m.clearedaccount
+	case accountalloweduser.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountAllowedUserMutation) ClearEdge(name string) error {
+	switch name {
+	case accountalloweduser.EdgeAccount:
+		m.ClearAccount()
+		return nil
+	case accountalloweduser.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountAllowedUser unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountAllowedUserMutation) ResetEdge(name string) error {
+	switch name {
+	case accountalloweduser.EdgeAccount:
+		m.ResetAccount()
+		return nil
+	case accountalloweduser.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountAllowedUser edge %s", name)
 }
 
 // AccountGroupMutation represents an operation that mutates the AccountGroup nodes in the graph.
@@ -48216,6 +48718,9 @@ type UserMutation struct {
 	allowed_groups                map[int64]struct{}
 	removedallowed_groups         map[int64]struct{}
 	clearedallowed_groups         bool
+	white_listed_accounts         map[int64]struct{}
+	removedwhite_listed_accounts  map[int64]struct{}
+	clearedwhite_listed_accounts  bool
 	usage_logs                    map[int64]struct{}
 	removedusage_logs             map[int64]struct{}
 	clearedusage_logs             bool
@@ -49727,6 +50232,60 @@ func (m *UserMutation) ResetAllowedGroups() {
 	m.removedallowed_groups = nil
 }
 
+// AddWhiteListedAccountIDs adds the "white_listed_accounts" edge to the Account entity by ids.
+func (m *UserMutation) AddWhiteListedAccountIDs(ids ...int64) {
+	if m.white_listed_accounts == nil {
+		m.white_listed_accounts = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.white_listed_accounts[ids[i]] = struct{}{}
+	}
+}
+
+// ClearWhiteListedAccounts clears the "white_listed_accounts" edge to the Account entity.
+func (m *UserMutation) ClearWhiteListedAccounts() {
+	m.clearedwhite_listed_accounts = true
+}
+
+// WhiteListedAccountsCleared reports if the "white_listed_accounts" edge to the Account entity was cleared.
+func (m *UserMutation) WhiteListedAccountsCleared() bool {
+	return m.clearedwhite_listed_accounts
+}
+
+// RemoveWhiteListedAccountIDs removes the "white_listed_accounts" edge to the Account entity by IDs.
+func (m *UserMutation) RemoveWhiteListedAccountIDs(ids ...int64) {
+	if m.removedwhite_listed_accounts == nil {
+		m.removedwhite_listed_accounts = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.white_listed_accounts, ids[i])
+		m.removedwhite_listed_accounts[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedWhiteListedAccounts returns the removed IDs of the "white_listed_accounts" edge to the Account entity.
+func (m *UserMutation) RemovedWhiteListedAccountsIDs() (ids []int64) {
+	for id := range m.removedwhite_listed_accounts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// WhiteListedAccountsIDs returns the "white_listed_accounts" edge IDs in the mutation.
+func (m *UserMutation) WhiteListedAccountsIDs() (ids []int64) {
+	for id := range m.white_listed_accounts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetWhiteListedAccounts resets all changes to the "white_listed_accounts" edge.
+func (m *UserMutation) ResetWhiteListedAccounts() {
+	m.white_listed_accounts = nil
+	m.clearedwhite_listed_accounts = false
+	m.removedwhite_listed_accounts = nil
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by ids.
 func (m *UserMutation) AddUsageLogIDs(ids ...int64) {
 	if m.usage_logs == nil {
@@ -50743,7 +51302,7 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 14)
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -50761,6 +51320,9 @@ func (m *UserMutation) AddedEdges() []string {
 	}
 	if m.allowed_groups != nil {
 		edges = append(edges, user.EdgeAllowedGroups)
+	}
+	if m.white_listed_accounts != nil {
+		edges = append(edges, user.EdgeWhiteListedAccounts)
 	}
 	if m.usage_logs != nil {
 		edges = append(edges, user.EdgeUsageLogs)
@@ -50826,6 +51388,12 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeWhiteListedAccounts:
+		ids := make([]ent.Value, 0, len(m.white_listed_accounts))
+		for id := range m.white_listed_accounts {
+			ids = append(ids, id)
+		}
+		return ids
 	case user.EdgeUsageLogs:
 		ids := make([]ent.Value, 0, len(m.usage_logs))
 		for id := range m.usage_logs {
@@ -50874,7 +51442,7 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 14)
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -50892,6 +51460,9 @@ func (m *UserMutation) RemovedEdges() []string {
 	}
 	if m.removedallowed_groups != nil {
 		edges = append(edges, user.EdgeAllowedGroups)
+	}
+	if m.removedwhite_listed_accounts != nil {
+		edges = append(edges, user.EdgeWhiteListedAccounts)
 	}
 	if m.removedusage_logs != nil {
 		edges = append(edges, user.EdgeUsageLogs)
@@ -50957,6 +51528,12 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeWhiteListedAccounts:
+		ids := make([]ent.Value, 0, len(m.removedwhite_listed_accounts))
+		for id := range m.removedwhite_listed_accounts {
+			ids = append(ids, id)
+		}
+		return ids
 	case user.EdgeUsageLogs:
 		ids := make([]ent.Value, 0, len(m.removedusage_logs))
 		for id := range m.removedusage_logs {
@@ -51005,7 +51582,7 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 14)
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -51023,6 +51600,9 @@ func (m *UserMutation) ClearedEdges() []string {
 	}
 	if m.clearedallowed_groups {
 		edges = append(edges, user.EdgeAllowedGroups)
+	}
+	if m.clearedwhite_listed_accounts {
+		edges = append(edges, user.EdgeWhiteListedAccounts)
 	}
 	if m.clearedusage_logs {
 		edges = append(edges, user.EdgeUsageLogs)
@@ -51064,6 +51644,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedannouncement_reads
 	case user.EdgeAllowedGroups:
 		return m.clearedallowed_groups
+	case user.EdgeWhiteListedAccounts:
+		return m.clearedwhite_listed_accounts
 	case user.EdgeUsageLogs:
 		return m.clearedusage_logs
 	case user.EdgeAttributeValues:
@@ -51111,6 +51693,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeAllowedGroups:
 		m.ResetAllowedGroups()
+		return nil
+	case user.EdgeWhiteListedAccounts:
+		m.ResetWhiteListedAccounts()
 		return nil
 	case user.EdgeUsageLogs:
 		m.ResetUsageLogs()
@@ -54787,6 +55372,7 @@ type UserSubscriptionMutation struct {
 	starts_at               *time.Time
 	expires_at              *time.Time
 	status                  *string
+	auto_renew              *bool
 	daily_window_start      *time.Time
 	weekly_window_start     *time.Time
 	monthly_window_start    *time.Time
@@ -55210,6 +55796,42 @@ func (m *UserSubscriptionMutation) OldStatus(ctx context.Context) (v string, err
 // ResetStatus resets all changes to the "status" field.
 func (m *UserSubscriptionMutation) ResetStatus() {
 	m.status = nil
+}
+
+// SetAutoRenew sets the "auto_renew" field.
+func (m *UserSubscriptionMutation) SetAutoRenew(b bool) {
+	m.auto_renew = &b
+}
+
+// AutoRenew returns the value of the "auto_renew" field in the mutation.
+func (m *UserSubscriptionMutation) AutoRenew() (r bool, exists bool) {
+	v := m.auto_renew
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAutoRenew returns the old "auto_renew" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldAutoRenew(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAutoRenew is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAutoRenew requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAutoRenew: %w", err)
+	}
+	return oldValue.AutoRenew, nil
+}
+
+// ResetAutoRenew resets all changes to the "auto_renew" field.
+func (m *UserSubscriptionMutation) ResetAutoRenew() {
+	m.auto_renew = nil
 }
 
 // SetDailyWindowStart sets the "daily_window_start" field.
@@ -55843,7 +56465,7 @@ func (m *UserSubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserSubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, usersubscription.FieldCreatedAt)
 	}
@@ -55867,6 +56489,9 @@ func (m *UserSubscriptionMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, usersubscription.FieldStatus)
+	}
+	if m.auto_renew != nil {
+		fields = append(fields, usersubscription.FieldAutoRenew)
 	}
 	if m.daily_window_start != nil {
 		fields = append(fields, usersubscription.FieldDailyWindowStart)
@@ -55919,6 +56544,8 @@ func (m *UserSubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.ExpiresAt()
 	case usersubscription.FieldStatus:
 		return m.Status()
+	case usersubscription.FieldAutoRenew:
+		return m.AutoRenew()
 	case usersubscription.FieldDailyWindowStart:
 		return m.DailyWindowStart()
 	case usersubscription.FieldWeeklyWindowStart:
@@ -55962,6 +56589,8 @@ func (m *UserSubscriptionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldExpiresAt(ctx)
 	case usersubscription.FieldStatus:
 		return m.OldStatus(ctx)
+	case usersubscription.FieldAutoRenew:
+		return m.OldAutoRenew(ctx)
 	case usersubscription.FieldDailyWindowStart:
 		return m.OldDailyWindowStart(ctx)
 	case usersubscription.FieldWeeklyWindowStart:
@@ -56044,6 +56673,13 @@ func (m *UserSubscriptionMutation) SetField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
+		return nil
+	case usersubscription.FieldAutoRenew:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAutoRenew(v)
 		return nil
 	case usersubscription.FieldDailyWindowStart:
 		v, ok := value.(time.Time)
@@ -56258,6 +56894,9 @@ func (m *UserSubscriptionMutation) ResetField(name string) error {
 		return nil
 	case usersubscription.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case usersubscription.FieldAutoRenew:
+		m.ResetAutoRenew()
 		return nil
 	case usersubscription.FieldDailyWindowStart:
 		m.ResetDailyWindowStart()

@@ -80,6 +80,8 @@ const (
 	FieldQuotaDimension = "quota_dimension"
 	// EdgeGroups holds the string denoting the groups edge name in mutations.
 	EdgeGroups = "groups"
+	// EdgeAllowedUsers holds the string denoting the allowed_users edge name in mutations.
+	EdgeAllowedUsers = "allowed_users"
 	// EdgeProxy holds the string denoting the proxy edge name in mutations.
 	EdgeProxy = "proxy"
 	// EdgeParent holds the string denoting the parent edge name in mutations.
@@ -90,6 +92,8 @@ const (
 	EdgeUsageLogs = "usage_logs"
 	// EdgeAccountGroups holds the string denoting the account_groups edge name in mutations.
 	EdgeAccountGroups = "account_groups"
+	// EdgeAccountAllowedUsers holds the string denoting the account_allowed_users edge name in mutations.
+	EdgeAccountAllowedUsers = "account_allowed_users"
 	// Table holds the table name of the account in the database.
 	Table = "accounts"
 	// GroupsTable is the table that holds the groups relation/edge. The primary key declared below.
@@ -97,6 +101,11 @@ const (
 	// GroupsInverseTable is the table name for the Group entity.
 	// It exists in this package in order to avoid circular dependency with the "group" package.
 	GroupsInverseTable = "groups"
+	// AllowedUsersTable is the table that holds the allowed_users relation/edge. The primary key declared below.
+	AllowedUsersTable = "account_allowed_users"
+	// AllowedUsersInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	AllowedUsersInverseTable = "users"
 	// ProxyTable is the table that holds the proxy relation/edge.
 	ProxyTable = "accounts"
 	// ProxyInverseTable is the table name for the Proxy entity.
@@ -126,6 +135,13 @@ const (
 	AccountGroupsInverseTable = "account_groups"
 	// AccountGroupsColumn is the table column denoting the account_groups relation/edge.
 	AccountGroupsColumn = "account_id"
+	// AccountAllowedUsersTable is the table that holds the account_allowed_users relation/edge.
+	AccountAllowedUsersTable = "account_allowed_users"
+	// AccountAllowedUsersInverseTable is the table name for the AccountAllowedUser entity.
+	// It exists in this package in order to avoid circular dependency with the "accountalloweduser" package.
+	AccountAllowedUsersInverseTable = "account_allowed_users"
+	// AccountAllowedUsersColumn is the table column denoting the account_allowed_users relation/edge.
+	AccountAllowedUsersColumn = "account_id"
 )
 
 // Columns holds all SQL columns for account fields.
@@ -168,6 +184,9 @@ var (
 	// GroupsPrimaryKey and GroupsColumn2 are the table columns denoting the
 	// primary key for the groups relation (M2M).
 	GroupsPrimaryKey = []string{"account_id", "group_id"}
+	// AllowedUsersPrimaryKey and AllowedUsersColumn2 are the table columns denoting the
+	// primary key for the allowed_users relation (M2M).
+	AllowedUsersPrimaryKey = []string{"account_id", "user_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -415,6 +434,20 @@ func ByGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByAllowedUsersCount orders the results by allowed_users count.
+func ByAllowedUsersCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAllowedUsersStep(), opts...)
+	}
+}
+
+// ByAllowedUsers orders the results by allowed_users terms.
+func ByAllowedUsers(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAllowedUsersStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByProxyField orders the results by proxy field.
 func ByProxyField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -470,11 +503,32 @@ func ByAccountGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAccountGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByAccountAllowedUsersCount orders the results by account_allowed_users count.
+func ByAccountAllowedUsersCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAccountAllowedUsersStep(), opts...)
+	}
+}
+
+// ByAccountAllowedUsers orders the results by account_allowed_users terms.
+func ByAccountAllowedUsers(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAccountAllowedUsersStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newGroupsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, GroupsTable, GroupsPrimaryKey...),
+	)
+}
+func newAllowedUsersStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AllowedUsersInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, false, AllowedUsersTable, AllowedUsersPrimaryKey...),
 	)
 }
 func newProxyStep() *sqlgraph.Step {
@@ -510,5 +564,12 @@ func newAccountGroupsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountGroupsInverseTable, AccountGroupsColumn),
 		sqlgraph.Edge(sqlgraph.O2M, true, AccountGroupsTable, AccountGroupsColumn),
+	)
+}
+func newAccountAllowedUsersStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AccountAllowedUsersInverseTable, AccountAllowedUsersColumn),
+		sqlgraph.Edge(sqlgraph.O2M, true, AccountAllowedUsersTable, AccountAllowedUsersColumn),
 	)
 }

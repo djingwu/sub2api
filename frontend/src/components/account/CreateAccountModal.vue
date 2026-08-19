@@ -3334,6 +3334,9 @@
           :mixed-scheduling="mixedScheduling"
           data-tour="account-form-groups"
         />
+
+        <!-- Allowed Users (账号用户白名单) - 仅标准模式显示 -->
+        <UserSelector v-if="!authStore.isSimpleMode" v-model="form.allowed_user_ids" />
       </div>
 
     </form>
@@ -3734,6 +3737,7 @@ import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
+import UserSelector from '@/components/account/UserSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -4392,6 +4396,7 @@ const form = reactive({
   priority: 1,
   rate_multiplier: 1,
   group_ids: [] as number[],
+  allowed_user_ids: [] as number[],
   expires_at: null as number | null
 })
 

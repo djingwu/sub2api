@@ -3,6 +3,8 @@ export default {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',
+      allowedUsers: '指定可用用户（留空 = 分组内所有用户可用）',
+      allowedUsersTooltip: '账号仍分配到分组，但仅白名单内的用户能使用该账号；分组内其他用户不会消耗此账号的额度。',
       autoRefresh: '自动刷新',
       enableAutoRefresh: '启用自动刷新',
       refreshInterval5s: '5 秒',

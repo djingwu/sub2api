@@ -21,6 +21,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
+	dbaccountalloweduser "github.com/Wei-Shaw/sub2api/ent/accountalloweduser"
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
@@ -210,6 +211,11 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	}
 	account.GroupIDs = groupIDs
 	account.AccountGroups = append([]service.AccountGroup(nil), groups...)
+	if len(account.AllowedUserIDs) > 0 {
+		if err := r.bindAllowedUsersTx(ctx, txClient, account.ID, account.AllowedUserIDs); err != nil {
+			return err
+		}
+	}
 	if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
 		return err
 	}
@@ -283,6 +289,10 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 	if err != nil {
 		return nil, err
 	}
+	allowedUsersByAccount, err := r.loadAccountAllowedUsers(ctx, accountIDs)
+	if err != nil {
+		return nil, err
+	}
 
 	outByID := make(map[int64]*service.Account, len(entAccounts))
 	for _, entAcc := range entAccounts {
@@ -304,6 +314,9 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 		}
 		if ags, ok := accountGroupsByAccount[entAcc.ID]; ok {
 			out.AccountGroups = ags
+		}
+		if uids, ok := allowedUsersByAccount[entAcc.ID]; ok {
+			out.AllowedUserIDs = uids
 		}
 		outByID[entAcc.ID] = out
 	}
@@ -851,6 +864,9 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 	}
 
 	if _, err := txClient.AccountGroup.Delete().Where(dbaccountgroup.AccountIDEQ(id)).Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := txClient.AccountAllowedUser.Delete().Where(dbaccountalloweduser.AccountIDEQ(id)).Exec(ctx); err != nil {
 		return err
 	}
 	if _, err := txClient.ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = $1", id); err != nil {
@@ -1827,6 +1843,61 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 	payload := buildSchedulerGroupPayload(mergeGroupIDs(existingGroupIDs, groupIDs))
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue bind groups failed: account=%d err=%v", accountID, err)
+	}
+	return nil
+}
+
+// BindAllowedUsers 原子替换账号的用户白名单（先删后建）。
+// 空 userIDs = 清空白名单（分组内所有用户可用）。
+func (r *accountRepository) BindAllowedUsers(ctx context.Context, accountID int64, userIDs []int64) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return err
+	}
+
+	var txClient *dbent.Client
+	if err == nil {
+		defer func() { _ = tx.Rollback() }()
+		txClient = tx.Client()
+	} else {
+		// 已处于外部事务中（ErrTxStarted），复用当前 client
+		txClient = r.client
+	}
+
+	if err := r.bindAllowedUsersTx(ctx, txClient, accountID, userIDs); err != nil {
+		return err
+	}
+
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue bind allowed users failed: account=%d err=%v", accountID, err)
+	}
+	return nil
+}
+
+// bindAllowedUsersTx 在指定事务 client 内替换账号用户白名单（供创建/绑定复用）。
+func (r *accountRepository) bindAllowedUsersTx(ctx context.Context, txClient *dbent.Client, accountID int64, userIDs []int64) error {
+	if _, err := txClient.AccountAllowedUser.Delete().Where(dbaccountalloweduser.AccountIDEQ(accountID)).Exec(ctx); err != nil {
+		return err
+	}
+
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	builders := make([]*dbent.AccountAllowedUserCreate, 0, len(userIDs))
+	for _, userID := range userIDs {
+		builders = append(builders, txClient.AccountAllowedUser.Create().
+			SetAccountID(accountID).
+			SetUserID(userID),
+		)
+	}
+	if _, err := txClient.AccountAllowedUser.CreateBulk(builders...).Save(ctx); err != nil {
+		return err
 	}
 	return nil
 }
@@ -3100,6 +3171,10 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 	if err != nil {
 		return nil, err
 	}
+	allowedUsersByAccount, err := r.loadAccountAllowedUsers(ctx, accountIDs)
+	if err != nil {
+		return nil, err
+	}
 
 	outAccounts := make([]service.Account, 0, len(accounts))
 	for _, acc := range accounts {
@@ -3127,6 +3202,9 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		}
 		if ags, ok := accountGroupsByAccount[acc.ID]; ok {
 			out.AccountGroups = ags
+		}
+		if uids, ok := allowedUsersByAccount[acc.ID]; ok {
+			out.AllowedUserIDs = uids
 		}
 		outAccounts = append(outAccounts, *out)
 	}
@@ -3224,6 +3302,36 @@ func (r *accountRepository) loadAccountGroups(ctx context.Context, accountIDs []
 	}
 
 	return groupsByAccount, groupIDsByAccount, accountGroupsByAccount, nil
+}
+
+// loadAccountAllowedUsers 批量加载账号用户白名单：account_id -> user_ids。
+// 与 loadAccountGroups 同一模式，避免 N+1 查询。
+func (r *accountRepository) loadAccountAllowedUsers(ctx context.Context, accountIDs []int64) (map[int64][]int64, error) {
+	allowedUsersByAccount := make(map[int64][]int64)
+
+	accountIDs = uniquePositiveInt64s(accountIDs)
+	if len(accountIDs) == 0 {
+		return allowedUsersByAccount, nil
+	}
+
+	for start := 0; start < len(accountIDs); start += postgresParameterBatchSize {
+		end := start + postgresParameterBatchSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+		entries, err := r.client.AccountAllowedUser.Query().
+			Where(dbaccountalloweduser.AccountIDIn(accountIDs[start:end]...)).
+			Order(dbaccountalloweduser.ByAccountID()).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			allowedUsersByAccount[entry.AccountID] = append(allowedUsersByAccount[entry.AccountID], entry.UserID)
+		}
+	}
+
+	return allowedUsersByAccount, nil
 }
 
 func (r *accountRepository) loadGroups(ctx context.Context, groupIDs []int64) (map[int64]*service.Group, error) {

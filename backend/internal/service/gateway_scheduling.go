@@ -962,6 +962,7 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 		accounts, useMixed, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
 		if err == nil {
 			accounts = s.filterAccountsBySchedulingThreshold(ctx, accounts)
+			accounts = s.filterAccountsByAllowedUsers(ctx, accounts)
 			if platform == PlatformGrok || strings.EqualFold(platform, PlatformGrok) {
 				accounts = s.filterGrokFreeQuotaAccountsForGateway(ctx, accounts)
 			}
@@ -1026,7 +1027,7 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 					"tls_fingerprint", acc.IsTLSFingerprintEnabled())
 			}
 		}
-		return s.filterAccountsBySchedulingThreshold(ctx, filtered), useMixed, nil
+		return s.filterAccountsByAllowedUsers(ctx, s.filterAccountsBySchedulingThreshold(ctx, filtered)), useMixed, nil
 	}
 
 	var accounts []Account
@@ -1062,6 +1063,7 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 		}
 	}
 	accounts = s.filterAccountsBySchedulingThreshold(ctx, accounts)
+	accounts = s.filterAccountsByAllowedUsers(ctx, accounts)
 	if platform == PlatformGrok || strings.EqualFold(platform, PlatformGrok) {
 		accounts = s.filterGrokFreeQuotaAccountsForGateway(ctx, accounts)
 	}
@@ -1451,6 +1453,10 @@ func (s *GatewayService) getSchedulableAccount(ctx context.Context, accountID in
 	if s.isAccountBlockedBySchedulingThreshold(ctx, account) {
 		return nil, nil
 	}
+	// Sticky / non-list selection must honor the account user whitelist.
+	if !s.isAccountAllowedForUser(ctx, account) {
+		return nil, nil
+	}
 	// Sticky / non-list selection must honor free soft-gate (same as listSchedulableAccounts).
 	if account.IsGrok() {
 		if gated := s.filterGrokFreeQuotaAccountsForGateway(ctx, []Account{*account}); len(gated) == 0 {
@@ -1473,6 +1479,46 @@ func (s *GatewayService) filterAccountsBySchedulingThreshold(ctx context.Context
 		filtered = append(filtered, accounts[i])
 	}
 	return filtered
+}
+
+// filterAccountsByAllowedUsers 按账号用户白名单过滤候选账号。
+// 白名单非空且当前请求用户不在白名单内 → 跳过该账号（其额度不会被他人消耗）。
+// 无法解析请求用户（ctx 无 UserID 或 <=0）时不限制，保持内部/管理探测调用向后兼容。
+func (s *GatewayService) filterAccountsByAllowedUsers(ctx context.Context, accounts []Account) []Account {
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	if userID <= 0 {
+		return accounts
+	}
+	hasWhitelist := false
+	for i := range accounts {
+		if len(accounts[i].AllowedUserIDs) > 0 {
+			hasWhitelist = true
+			break
+		}
+	}
+	if !hasWhitelist {
+		return accounts
+	}
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		if len(accounts[i].AllowedUserIDs) == 0 || containsInt64(accounts[i].AllowedUserIDs, userID) {
+			filtered = append(filtered, accounts[i])
+		}
+	}
+	return filtered
+}
+
+// isAccountAllowedForUser 判断当前请求用户是否被允许使用该账号（粘性/直取路径）。
+// 白名单为空或无法解析用户时放行（与 filterAccountsByAllowedUsers 语义一致）。
+func (s *GatewayService) isAccountAllowedForUser(ctx context.Context, account *Account) bool {
+	if account == nil || len(account.AllowedUserIDs) == 0 {
+		return true
+	}
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	if userID <= 0 {
+		return true
+	}
+	return containsInt64(account.AllowedUserIDs, userID)
 }
 
 func (s *GatewayService) isAccountBlockedBySchedulingThreshold(ctx context.Context, account *Account) bool {

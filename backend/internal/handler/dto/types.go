@@ -311,6 +311,9 @@ type Account struct {
 
 	GroupIDs []int64  `json:"group_ids,omitempty"`
 	Groups   []*Group `json:"groups,omitempty"`
+
+	// AllowedUserIDs 账号用户白名单：非空时仅这些用户可使用该账号。
+	AllowedUserIDs []int64 `json:"allowed_user_ids,omitempty"`
 }
 
 type AccountGroup struct {
@@ -637,6 +640,8 @@ type UserSubscription struct {
 	StartsAt  time.Time `json:"starts_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Status    string    `json:"status"`
+
+	AutoRenew bool `json:"auto_renew"`
 
 	DailyWindowStart   *time.Time `json:"daily_window_start"`
 	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`

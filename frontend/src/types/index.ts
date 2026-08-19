@@ -1157,6 +1157,7 @@ export interface Account {
   proxy?: Proxy
   group_ids?: number[] // Groups this account belongs to
   groups?: Group[] // Preloaded group objects
+  allowed_user_ids?: number[] // 账号用户白名单：非空时仅这些用户可用该账号
 
   // Rate limit & scheduling fields
   schedulable: boolean
@@ -1420,6 +1421,7 @@ export interface CreateAccountRequest {
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
   group_ids?: number[]
+  allowed_user_ids?: number[] // 账号用户白名单：非空时仅这些用户可用该账号
   expires_at?: number | null
   auto_pause_on_expired?: boolean
   upstream_billing_probe_enabled?: boolean
@@ -1440,6 +1442,7 @@ export interface UpdateAccountRequest {
   schedulable?: boolean
   status?: 'active' | 'inactive' | 'error'
   group_ids?: number[]
+  allowed_user_ids?: number[] // 账号用户白名单：非空时仅这些用户可用该账号
   expires_at?: number | null
   auto_pause_on_expired?: boolean
   upstream_billing_probe_enabled?: boolean
@@ -1983,6 +1986,7 @@ export interface UserSubscription {
   daily_window_start: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null
+  auto_renew: boolean
   created_at: string
   updated_at: string
   revoked_at?: string | null

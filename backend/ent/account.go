@@ -91,6 +91,8 @@ type Account struct {
 type AccountEdges struct {
 	// Groups holds the value of the groups edge.
 	Groups []*Group `json:"groups,omitempty"`
+	// AllowedUsers holds the value of the allowed_users edge.
+	AllowedUsers []*User `json:"allowed_users,omitempty"`
 	// Proxy holds the value of the proxy edge.
 	Proxy *Proxy `json:"proxy,omitempty"`
 	// Parent holds the value of the parent edge.
@@ -101,9 +103,11 @@ type AccountEdges struct {
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// AccountGroups holds the value of the account_groups edge.
 	AccountGroups []*AccountGroup `json:"account_groups,omitempty"`
+	// AccountAllowedUsers holds the value of the account_allowed_users edge.
+	AccountAllowedUsers []*AccountAllowedUser `json:"account_allowed_users,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [8]bool
 }
 
 // GroupsOrErr returns the Groups value or an error if the edge
@@ -115,12 +119,21 @@ func (e AccountEdges) GroupsOrErr() ([]*Group, error) {
 	return nil, &NotLoadedError{edge: "groups"}
 }
 
+// AllowedUsersOrErr returns the AllowedUsers value or an error if the edge
+// was not loaded in eager-loading.
+func (e AccountEdges) AllowedUsersOrErr() ([]*User, error) {
+	if e.loadedTypes[1] {
+		return e.AllowedUsers, nil
+	}
+	return nil, &NotLoadedError{edge: "allowed_users"}
+}
+
 // ProxyOrErr returns the Proxy value or an error if the edge
 // was not loaded in eager-loading, or loaded but was not found.
 func (e AccountEdges) ProxyOrErr() (*Proxy, error) {
 	if e.Proxy != nil {
 		return e.Proxy, nil
-	} else if e.loadedTypes[1] {
+	} else if e.loadedTypes[2] {
 		return nil, &NotFoundError{label: proxy.Label}
 	}
 	return nil, &NotLoadedError{edge: "proxy"}
@@ -131,7 +144,7 @@ func (e AccountEdges) ProxyOrErr() (*Proxy, error) {
 func (e AccountEdges) ParentOrErr() (*Account, error) {
 	if e.Parent != nil {
 		return e.Parent, nil
-	} else if e.loadedTypes[2] {
+	} else if e.loadedTypes[3] {
 		return nil, &NotFoundError{label: account.Label}
 	}
 	return nil, &NotLoadedError{edge: "parent"}
@@ -140,7 +153,7 @@ func (e AccountEdges) ParentOrErr() (*Account, error) {
 // ChildrenOrErr returns the Children value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) ChildrenOrErr() ([]*Account, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.Children, nil
 	}
 	return nil, &NotLoadedError{edge: "children"}
@@ -149,7 +162,7 @@ func (e AccountEdges) ChildrenOrErr() ([]*Account, error) {
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[5] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -158,10 +171,19 @@ func (e AccountEdges) UsageLogsOrErr() ([]*UsageLog, error) {
 // AccountGroupsOrErr returns the AccountGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) AccountGroupsOrErr() ([]*AccountGroup, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[6] {
 		return e.AccountGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "account_groups"}
+}
+
+// AccountAllowedUsersOrErr returns the AccountAllowedUsers value or an error if the edge
+// was not loaded in eager-loading.
+func (e AccountEdges) AccountAllowedUsersOrErr() ([]*AccountAllowedUser, error) {
+	if e.loadedTypes[7] {
+		return e.AccountAllowedUsers, nil
+	}
+	return nil, &NotLoadedError{edge: "account_allowed_users"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -427,6 +449,11 @@ func (_m *Account) QueryGroups() *GroupQuery {
 	return NewAccountClient(_m.config).QueryGroups(_m)
 }
 
+// QueryAllowedUsers queries the "allowed_users" edge of the Account entity.
+func (_m *Account) QueryAllowedUsers() *UserQuery {
+	return NewAccountClient(_m.config).QueryAllowedUsers(_m)
+}
+
 // QueryProxy queries the "proxy" edge of the Account entity.
 func (_m *Account) QueryProxy() *ProxyQuery {
 	return NewAccountClient(_m.config).QueryProxy(_m)
@@ -450,6 +477,11 @@ func (_m *Account) QueryUsageLogs() *UsageLogQuery {
 // QueryAccountGroups queries the "account_groups" edge of the Account entity.
 func (_m *Account) QueryAccountGroups() *AccountGroupQuery {
 	return NewAccountClient(_m.config).QueryAccountGroups(_m)
+}
+
+// QueryAccountAllowedUsers queries the "account_allowed_users" edge of the Account entity.
+func (_m *Account) QueryAccountAllowedUsers() *AccountAllowedUserQuery {
+	return NewAccountClient(_m.config).QueryAccountAllowedUsers(_m)
 }
 
 // Update returns a builder for updating this Account.

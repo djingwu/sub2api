@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -300,6 +301,7 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		RateMultiplier:        cloneAccountValuePointer(source.RateMultiplier),
 		LoadFactor:            cloneAccountValuePointer(source.LoadFactor),
 		GroupIDs:              groupIDs,
+		AllowedUserIDs:        append([]int64(nil), source.AllowedUserIDs...),
 		ExpiresAt:             expiresAt,
 		AutoPauseOnExpired:    &autoPauseOnExpired,
 		SkipDefaultGroupBind:  true,
@@ -417,6 +419,9 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
+	if input.AllowedUserIDs != nil {
+		account.AllowedUserIDs = append([]int64(nil), input.AllowedUserIDs...)
+	}
 	if input.ProbeEnabled != nil && *input.ProbeEnabled {
 		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
@@ -512,6 +517,17 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, err
 		}
 	}
+
+	// 账号用户白名单
+	if len(input.AllowedUserIDs) > 0 {
+		if err := s.validateAllowedUserIDsExist(ctx, input.AllowedUserIDs); err != nil {
+			return nil, err
+		}
+		if err := s.accountRepo.BindAllowedUsers(ctx, account.ID, input.AllowedUserIDs); err != nil {
+			return nil, err
+		}
+	}
+	account.AllowedUserIDs = append([]int64(nil), input.AllowedUserIDs...)
 
 	// OAuth 账号：创建后异步设置隐私。
 	// 使用 Ensure（幂等）而非 Force：新建账号 Extra 为空时效果相同，但更安全。
@@ -839,6 +855,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := s.accountRepo.BindGroups(ctx, account.ID, *input.GroupIDs); err != nil {
 			return nil, err
 		}
+	}
+
+	// 账号用户白名单：nil = 不修改；空数组 = 清空白名单
+	if input.AllowedUserIDs != nil {
+		if err := s.validateAllowedUserIDsExist(ctx, *input.AllowedUserIDs); err != nil {
+			return nil, err
+		}
+		if err := s.accountRepo.BindAllowedUsers(ctx, account.ID, *input.AllowedUserIDs); err != nil {
+			return nil, err
+		}
+		account.AllowedUserIDs = append([]int64(nil), *input.AllowedUserIDs...)
 	}
 
 	// 重新查询以确保返回完整数据（包括正确的 Proxy 关联对象）
@@ -1491,6 +1518,27 @@ func (s *adminServiceImpl) validateGroupIDsExist(ctx context.Context, groupIDs [
 		if _, err := s.groupRepo.GetByID(ctx, groupID); err != nil {
 			return fmt.Errorf("get group: %w", err)
 		}
+	}
+	return nil
+}
+
+// validateAllowedUserIDsExist 校验白名单用户存在且未删除。
+func (s *adminServiceImpl) validateAllowedUserIDsExist(ctx context.Context, userIDs []int64) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	if s.entClient == nil {
+		return errors.New("user repository not configured")
+	}
+	count, err := s.entClient.User.Query().
+		Where(dbuser.IDIn(userIDs...)).
+		Where(dbuser.DeletedAtIsNil()).
+		Count(ctx)
+	if err != nil {
+		return fmt.Errorf("check allowed users exists: %w", err)
+	}
+	if count != len(userIDs) {
+		return infraerrors.BadRequest("ALLOWED_USER_NOT_FOUND", "one or more allowed users do not exist")
 	}
 	return nil
 }

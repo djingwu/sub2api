@@ -212,6 +212,11 @@ func (Account) Edges() []ent.Edge {
 		// 一个账户可以属于多个分组，一个分组可以包含多个账户
 		edge.To("groups", Group.Type).
 			Through("account_groups", AccountGroup.Type),
+		// allowed_users: 账号用户白名单（多对多关系）
+		// 通过 account_allowed_users 中间表实现。
+		// 空白名单 = 分组内所有用户可用；非空白名单 = 仅指定用户可用。
+		edge.To("allowed_users", User.Type).
+			Through("account_allowed_users", AccountAllowedUser.Type),
 		// proxy: 账户使用的代理配置（可选的一对一关系）
 		// 使用已有的 proxy_id 外键字段
 		edge.To("proxy", Proxy.Type).

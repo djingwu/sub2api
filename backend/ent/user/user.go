@@ -75,6 +75,8 @@ const (
 	EdgeAnnouncementReads = "announcement_reads"
 	// EdgeAllowedGroups holds the string denoting the allowed_groups edge name in mutations.
 	EdgeAllowedGroups = "allowed_groups"
+	// EdgeWhiteListedAccounts holds the string denoting the white_listed_accounts edge name in mutations.
+	EdgeWhiteListedAccounts = "white_listed_accounts"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
 	// EdgeAttributeValues holds the string denoting the attribute_values edge name in mutations.
@@ -91,6 +93,8 @@ const (
 	EdgePlatformQuotas = "platform_quotas"
 	// EdgeUserAllowedGroups holds the string denoting the user_allowed_groups edge name in mutations.
 	EdgeUserAllowedGroups = "user_allowed_groups"
+	// EdgeAccountAllowedUsers holds the string denoting the account_allowed_users edge name in mutations.
+	EdgeAccountAllowedUsers = "account_allowed_users"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// APIKeysTable is the table that holds the api_keys relation/edge.
@@ -133,6 +137,11 @@ const (
 	// AllowedGroupsInverseTable is the table name for the Group entity.
 	// It exists in this package in order to avoid circular dependency with the "group" package.
 	AllowedGroupsInverseTable = "groups"
+	// WhiteListedAccountsTable is the table that holds the white_listed_accounts relation/edge. The primary key declared below.
+	WhiteListedAccountsTable = "account_allowed_users"
+	// WhiteListedAccountsInverseTable is the table name for the Account entity.
+	// It exists in this package in order to avoid circular dependency with the "account" package.
+	WhiteListedAccountsInverseTable = "accounts"
 	// UsageLogsTable is the table that holds the usage_logs relation/edge.
 	UsageLogsTable = "usage_logs"
 	// UsageLogsInverseTable is the table name for the UsageLog entity.
@@ -189,6 +198,13 @@ const (
 	UserAllowedGroupsInverseTable = "user_allowed_groups"
 	// UserAllowedGroupsColumn is the table column denoting the user_allowed_groups relation/edge.
 	UserAllowedGroupsColumn = "user_id"
+	// AccountAllowedUsersTable is the table that holds the account_allowed_users relation/edge.
+	AccountAllowedUsersTable = "account_allowed_users"
+	// AccountAllowedUsersInverseTable is the table name for the AccountAllowedUser entity.
+	// It exists in this package in order to avoid circular dependency with the "accountalloweduser" package.
+	AccountAllowedUsersInverseTable = "account_allowed_users"
+	// AccountAllowedUsersColumn is the table column denoting the account_allowed_users relation/edge.
+	AccountAllowedUsersColumn = "user_id"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -224,6 +240,9 @@ var (
 	// AllowedGroupsPrimaryKey and AllowedGroupsColumn2 are the table columns denoting the
 	// primary key for the allowed_groups relation (M2M).
 	AllowedGroupsPrimaryKey = []string{"user_id", "group_id"}
+	// WhiteListedAccountsPrimaryKey and WhiteListedAccountsColumn2 are the table columns denoting the
+	// primary key for the white_listed_accounts relation (M2M).
+	WhiteListedAccountsPrimaryKey = []string{"account_id", "user_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -504,6 +523,20 @@ func ByAllowedGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByWhiteListedAccountsCount orders the results by white_listed_accounts count.
+func ByWhiteListedAccountsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newWhiteListedAccountsStep(), opts...)
+	}
+}
+
+// ByWhiteListedAccounts orders the results by white_listed_accounts terms.
+func ByWhiteListedAccounts(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newWhiteListedAccountsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByUsageLogsCount orders the results by usage_logs count.
 func ByUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -615,6 +648,20 @@ func ByUserAllowedGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption
 		sqlgraph.OrderByNeighborTerms(s, newUserAllowedGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByAccountAllowedUsersCount orders the results by account_allowed_users count.
+func ByAccountAllowedUsersCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAccountAllowedUsersStep(), opts...)
+	}
+}
+
+// ByAccountAllowedUsers orders the results by account_allowed_users terms.
+func ByAccountAllowedUsers(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAccountAllowedUsersStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newAPIKeysStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -655,6 +702,13 @@ func newAllowedGroupsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AllowedGroupsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, AllowedGroupsTable, AllowedGroupsPrimaryKey...),
+	)
+}
+func newWhiteListedAccountsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(WhiteListedAccountsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, true, WhiteListedAccountsTable, WhiteListedAccountsPrimaryKey...),
 	)
 }
 func newUsageLogsStep() *sqlgraph.Step {
@@ -711,5 +765,12 @@ func newUserAllowedGroupsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserAllowedGroupsInverseTable, UserAllowedGroupsColumn),
 		sqlgraph.Edge(sqlgraph.O2M, true, UserAllowedGroupsTable, UserAllowedGroupsColumn),
+	)
+}
+func newAccountAllowedUsersStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AccountAllowedUsersInverseTable, AccountAllowedUsersColumn),
+		sqlgraph.Edge(sqlgraph.O2M, true, AccountAllowedUsersTable, AccountAllowedUsersColumn),
 	)
 }

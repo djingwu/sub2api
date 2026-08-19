@@ -3,6 +3,8 @@ export default {
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
+      allowedUsers: 'Allowed users (empty = all users in groups)',
+      allowedUsersTooltip: 'The account stays assigned to its groups, but only whitelisted users can use it; other group members cannot consume this account quota.',
       autoRefresh: 'Auto Refresh',
       enableAutoRefresh: 'Enable auto refresh',
       refreshInterval5s: '5 seconds',

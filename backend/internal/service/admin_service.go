@@ -370,7 +370,9 @@ type CreateAccountInput struct {
 	RateMultiplier     *float64 // 账号计费倍率（>=0，允许 0）
 	LoadFactor         *int
 	GroupIDs           []int64
-	ExpiresAt          *int64
+	// AllowedUserIDs 账号用户白名单（非空时仅这些用户可用该账号）。
+	AllowedUserIDs []int64
+	ExpiresAt      *int64
 	AutoPauseOnExpired *bool
 	ProbeEnabled       *bool
 	// SkipDefaultGroupBind prevents auto-binding to platform default group when GroupIDs is empty.
@@ -402,6 +404,8 @@ type UpdateAccountInput struct {
 	LoadFactor            *int
 	Status                string
 	GroupIDs              *[]int64
+	// AllowedUserIDs 账号用户白名单：nil = 不修改，空数组 = 清空白名单。
+	AllowedUserIDs        *[]int64
 	ExpiresAt             *int64
 	AutoPauseOnExpired    *bool
 	ProbeEnabled          *bool
