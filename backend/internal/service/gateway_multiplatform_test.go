@@ -110,6 +110,9 @@ func (m *mockAccountRepoForPlatform) ListByPlatform(ctx context.Context, platfor
 func (m *mockAccountRepoForPlatform) UpdateLastUsed(ctx context.Context, id int64) error {
 	return nil
 }
+func (m *mockAccountRepoForPlatform) BindAllowedUsers(ctx context.Context, accountID int64, userIDs []int64) error {
+	return nil
+}
 func (m *mockAccountRepoForPlatform) BatchUpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
 	return nil
 }

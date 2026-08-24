@@ -423,10 +423,23 @@ func (s *GeminiMessagesCompatService) GetAntigravityGatewayService() *Antigravit
 }
 
 func (s *GeminiMessagesCompatService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
+	var (
+		account *Account
+		err     error
+	)
 	if s.schedulerSnapshot != nil {
-		return s.schedulerSnapshot.GetAccount(ctx, accountID)
+		account, err = s.schedulerSnapshot.GetAccount(ctx, accountID)
+	} else {
+		account, err = s.accountRepo.GetByID(ctx, accountID)
 	}
-	return s.accountRepo.GetByID(ctx, accountID)
+	if err != nil || account == nil {
+		return account, err
+	}
+	// Sticky / non-list selection must honor the account user whitelist.
+	if !s.isGeminiAccountAllowedForUser(ctx, account) {
+		return nil, nil
+	}
+	return account, nil
 }
 
 func (s *GeminiMessagesCompatService) hydrateSelectedAccount(ctx context.Context, account *Account) (*Account, error) {
@@ -444,24 +457,69 @@ func (s *GeminiMessagesCompatService) hydrateSelectedAccount(ctx context.Context
 }
 
 func (s *GeminiMessagesCompatService) listSchedulableAccountsOnce(ctx context.Context, groupID *int64, platform string, hasForcePlatform bool) ([]Account, error) {
+	var accounts []Account
+	var err error
 	if s.schedulerSnapshot != nil {
-		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
-		return accounts, err
-	}
+		accounts, _, err = s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
+	} else {
+		useMixedScheduling := platform == PlatformGemini && !hasForcePlatform
+		queryPlatforms := []string{platform}
+		if useMixedScheduling {
+			queryPlatforms = []string{platform, PlatformAntigravity}
+		}
 
-	useMixedScheduling := platform == PlatformGemini && !hasForcePlatform
-	queryPlatforms := []string{platform}
-	if useMixedScheduling {
-		queryPlatforms = []string{platform, PlatformAntigravity}
+		if groupID != nil {
+			accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatforms(ctx, *groupID, queryPlatforms)
+		} else if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+			accounts, err = s.accountRepo.ListSchedulableByPlatforms(ctx, queryPlatforms)
+		} else {
+			accounts, err = s.accountRepo.ListSchedulableUngroupedByPlatforms(ctx, queryPlatforms)
+		}
 	}
+	if err != nil {
+		return nil, err
+	}
+	return s.filterGeminiAccountsByAllowedUsers(ctx, accounts), nil
+}
 
-	if groupID != nil {
-		return s.accountRepo.ListSchedulableByGroupIDAndPlatforms(ctx, *groupID, queryPlatforms)
+// filterGeminiAccountsByAllowedUsers 按账号用户白名单过滤候选账号（Gemini 兼容网关路径）。
+// 白名单非空且当前请求用户不在白名单内 → 跳过该账号（其额度不会被他人消耗）。
+// 无法解析请求用户（ctx 无 UserID 或 <=0）时不限制，保持内部/管理探测调用向后兼容。
+func (s *GeminiMessagesCompatService) filterGeminiAccountsByAllowedUsers(ctx context.Context, accounts []Account) []Account {
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	if userID <= 0 {
+		return accounts
 	}
-	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
-		return s.accountRepo.ListSchedulableByPlatforms(ctx, queryPlatforms)
+	hasWhitelist := false
+	for i := range accounts {
+		if len(accounts[i].AllowedUserIDs) > 0 {
+			hasWhitelist = true
+			break
+		}
 	}
-	return s.accountRepo.ListSchedulableUngroupedByPlatforms(ctx, queryPlatforms)
+	if !hasWhitelist {
+		return accounts
+	}
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		if len(accounts[i].AllowedUserIDs) == 0 || containsInt64(accounts[i].AllowedUserIDs, userID) {
+			filtered = append(filtered, accounts[i])
+		}
+	}
+	return filtered
+}
+
+// isGeminiAccountAllowedForUser 判断当前请求用户是否被允许使用该账号（Gemini 兼容粘性/直取路径）。
+// 白名单为空或无法解析用户时放行（与 filterGeminiAccountsByAllowedUsers 语义一致）。
+func (s *GeminiMessagesCompatService) isGeminiAccountAllowedForUser(ctx context.Context, account *Account) bool {
+	if account == nil || len(account.AllowedUserIDs) == 0 {
+		return true
+	}
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	if userID <= 0 {
+		return true
+	}
+	return containsInt64(account.AllowedUserIDs, userID)
 }
 
 func (s *GeminiMessagesCompatService) validateUpstreamBaseURL(raw string) (string, error) {

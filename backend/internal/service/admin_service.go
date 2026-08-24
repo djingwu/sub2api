@@ -163,6 +163,8 @@ type UpdateUserInput struct {
 	RPMLimit      *int     // 使用指针区分"未提供"和"设置为0"
 	Status        string
 	AllowedGroups *[]int64 // 使用指针区分"未提供"和"设置为空数组"
+	// CostExempt 成本豁免：归零该用户账单成本并跳过扣费
+	CostExempt *bool
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64

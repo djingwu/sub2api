@@ -94,6 +94,10 @@ func (s *stubAntigravityAccountRepo) SetRateLimited(ctx context.Context, id int6
 	return nil
 }
 
+func (s *stubAntigravityAccountRepo) BindAllowedUsers(_ context.Context, _ int64, _ []int64) error {
+	return nil
+}
+
 func (s *stubAntigravityAccountRepo) SetModelRateLimit(ctx context.Context, id int64, modelKey string, resetAt time.Time, reason ...string) error {
 	s.modelRateLimitCalls = append(s.modelRateLimitCalls, modelRateLimitCall{accountID: id, modelKey: modelKey, resetAt: resetAt})
 	return nil

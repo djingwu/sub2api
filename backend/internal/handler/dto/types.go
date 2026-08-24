@@ -48,6 +48,8 @@ type AdminUser struct {
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]rateMultiplier
 	GroupRates map[int64]float64 `json:"group_rates,omitempty"`
+	// CostExempt 成本豁免：该用户用量账面不显示消耗，但照常扣费
+	CostExempt bool `json:"cost_exempt"`
 }
 
 type APIKey struct {

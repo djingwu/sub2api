@@ -485,11 +485,15 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 			return
 		}
 		syntheticEmail := buildDingTalkSyntheticEmail(unionID)
+		if h.tryDingTalkSyntheticEmailFastPath(c, frontendCallback, redirectTo, identityKey, syntheticEmail, staff, upstreamClaims) {
+			return
+		}
+		// fast path 不可用（强制邮箱/邀请码/注册被拦等）：回退到补邮箱或绑定已有账户流程。
 		if err := h.createOAuthPendingSession(c, oauthPendingSessionPayload{
 			Intent: oauthIntentLogin, Identity: identityKey, TargetUserID: nil,
 			ResolvedEmail: syntheticEmail, RedirectTo: redirectTo, BrowserSessionKey: browserSessionKey,
 			UpstreamIdentityClaims: upstreamClaims,
-			CompletionResponse:     map[string]any{"redirect": redirectTo, "synthetic_email": syntheticEmail},
+			CompletionResponse:     map[string]any{"step": "email_completion", "requires_email_completion": true, "redirect": redirectTo},
 		}); err != nil {
 			redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
 			return
@@ -615,6 +619,93 @@ func (h *AuthHandler) tryDingTalkVerifiedEmailFastPath(
 	clearOAuthPendingSessionCookie(c, isRequestHTTPS(c))
 	clearOAuthPendingBrowserCookie(c, isRequestHTTPS(c))
 	redirectWithFragment(c, frontendCallback, fragment)
+	return true
+}
+
+// tryDingTalkSyntheticEmailFastPath 在 require_email=false 且钉钉未返回企业邮箱时，
+// 用 unionID 派生的合成邮箱直接登录/建号并绑定身份（对齐 LinuxDo 无邮箱 fast path）。
+// 返回 true 表示已写出响应（登录重定向或错误页）；false 表示调用方应回退到常规流程。
+func (h *AuthHandler) tryDingTalkSyntheticEmailFastPath(
+	c *gin.Context,
+	frontendCallback string,
+	redirectTo string,
+	identity service.PendingAuthIdentityKey,
+	syntheticEmail string,
+	staff *DingTalkStaffInfo,
+	upstreamClaims map[string]any,
+) bool {
+	if h == nil || h.authService == nil || h.settingSvc == nil {
+		return false
+	}
+	ctx := c.Request.Context()
+	if h.isForceEmailOnThirdPartySignup(ctx) {
+		return false
+	}
+	if h.settingSvc.IsInvitationCodeEnabled(ctx) {
+		return false
+	}
+	if err := h.ensureBackendModeAllowsNewUserLogin(ctx); err != nil {
+		return false
+	}
+
+	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+		ctx,
+		syntheticEmail,
+		strings.TrimSpace(staff.Name),
+		"",
+		"",
+		readOAuthPromoCode(c),
+		"dingtalk",
+	)
+	if err != nil {
+		slog.Debug("dingtalk synthetic-email fast path skipped",
+			"synthetic_email", syntheticEmail, "reason", infraerrors.Reason(err))
+		return false
+	}
+	if user == nil || user.ID <= 0 {
+		slog.Debug("dingtalk synthetic-email fast path skipped",
+			"synthetic_email", syntheticEmail, "reason", "user_missing")
+		return false
+	}
+
+	// 绑定钉钉身份（无 pending session：直接绑定，同 LinuxDo 无邮箱路径）。
+	if err := applyPendingOAuthBinding(
+		ctx,
+		h.entClient(),
+		h.authService,
+		h.userService,
+		&dbent.PendingAuthSession{
+			Intent:                 oauthIntentLogin,
+			ProviderType:           identity.ProviderType,
+			ProviderKey:            identity.ProviderKey,
+			ProviderSubject:        identity.ProviderSubject,
+			ResolvedEmail:          syntheticEmail,
+			UpstreamIdentityClaims: upstreamClaims,
+		},
+		nil,
+		&user.ID,
+		true,
+		false,
+	); err != nil {
+		slog.Error("dingtalk synthetic-email fast path bind failed",
+			"user_id", user.ID, "synthetic_email", syntheticEmail, "error", err.Error())
+		redirectOAuthError(c, frontendCallback, "bind_failed", infraerrors.Reason(err), infraerrors.Message(err))
+		return true
+	}
+
+	// 身份同步（部门/姓名/企业邮箱）：user_id 已知，异步执行避免阻塞登录跳转。
+	cfg, cfgErr := h.getDingTalkOAuthConfig(ctx)
+	if cfgErr == nil {
+		client := h.dingTalkClient(cfg)
+		runDingTalkSyncAsync(ctx, func(syncCtx context.Context) {
+			h.syncDingTalkIdentity(syncCtx, cfg, client, user.ID, staff, false)
+		})
+	}
+
+	h.authService.RecordSuccessfulLogin(ctx, user.ID)
+	clearOAuthPendingSessionCookie(c, isRequestHTTPS(c))
+	clearOAuthPendingBrowserCookie(c, isRequestHTTPS(c))
+	redirectOAuthTokenPair(c, frontendCallback, tokenPair, redirectTo)
 	return true
 }
 
@@ -1011,14 +1102,18 @@ func (h *AuthHandler) syncDingTalkIdentity(ctx context.Context, cfg config.DingT
 			primaryDeptID = staff.DeptIDs[0]
 		}
 		slog.Info("dingtalk sync: pick primary dept", "user_id", userID, "all_dept_ids", staff.DeptIDs, "primary", primaryDeptID)
-		// 部门专属分组绑定：按 dept_id 匹配映射表（settings.dingtalk_dept_group_map）。
-		// 命中 → 幂等绑定该部门专属订阅分组 + 固定 $200 订阅；未命中 → 不分配。
+		// 部门专属分组绑定：解析直属部门（叶子）向上的部门链，按链逐个匹配
+		// 映射表（settings.dingtalk_dept_group_map）。叶子命中 → 绑该部门；
+		// 叶子未命中向上找父部门，第一个命中即绑定目标；全链未命中 → 不分配。
 		// 公司直属（dept_id<=1，根部门）不参与匹配。不依赖 dept path 解析成功。
 		if primaryDeptID > 1 && h.authService != nil {
-			if err := h.authService.BindUserToDingTalkDeptGroup(ctx, userID, primaryDeptID); err != nil {
-				slog.Warn("dingtalk sync: failed to bind user to dept group", "user_id", userID, "dept_id", primaryDeptID, "err", err)
-			} else {
-				slog.Info("dingtalk sync: user dept group binding done", "user_id", userID, "dept_id", primaryDeptID)
+			chain, chainErr := h.resolveDingTalkDeptChain(ctx, client, primaryDeptID)
+			if chainErr != nil {
+				slog.Warn("dingtalk sync: failed to resolve dept chain", "user_id", userID, "dept_id", primaryDeptID, "err", chainErr)
+			} else if len(chain) > 0 {
+				if err := h.authService.BindUserToDingTalkDeptGroup(ctx, userID, chain); err != nil {
+					slog.Warn("dingtalk sync: failed to bind user to dept group", "user_id", userID, "dept_ids", chain, "err", err)
+				}
 			}
 		}
 		path, err := h.resolveDingTalkDeptPath(ctx, client, primaryDeptID)
@@ -1168,4 +1263,35 @@ func (h *AuthHandler) resolveDingTalkDeptPath(ctx context.Context, client *DingT
 	}
 
 	return strings.Join(parts, "/"), nil
+}
+
+// resolveDingTalkDeptChain 返回从直属部门（叶子）向上直达根的部门 ID 链，
+// 顺序为自叶向根：chain[0]=deptID，chain[1]=父部门，依此类推。
+// 遇 dept_id=1（根）或 parent_id=0 / self 停止。加 visited set 防循环，最多 50 层。
+// 与 resolveDingTalkDeptPath 共用同一遍历规则，供部门映射逐级向上匹配使用。
+func (h *AuthHandler) resolveDingTalkDeptChain(ctx context.Context, client *DingTalkClient, deptID int64) ([]int64, error) {
+	const maxDepth = 50
+	visited := make(map[int64]bool, maxDepth)
+	var chain []int64
+
+	current := deptID
+	for i := 0; i < maxDepth; i++ {
+		if current < 1 || visited[current] {
+			break
+		}
+		visited[current] = true
+		chain = append(chain, current)
+
+		info, err := client.GetDeptInfo(ctx, current)
+		if err != nil {
+			return nil, fmt.Errorf("get dept info %d: %w", current, err)
+		}
+		// 钉钉根部门 dept_id=1，ParentID 通常为 0；遇到 0 / self 终止避免循环。
+		if info.ParentID < 1 || info.ParentID == current {
+			break
+		}
+		current = info.ParentID
+	}
+
+	return chain, nil
 }

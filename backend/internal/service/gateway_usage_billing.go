@@ -903,6 +903,14 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		)
 	}
 
+	// 成本豁免（仅隐藏账面，照常扣费）：被标记用户的用量金额在落库时归零，
+	// 使其不出现在任何成本报表（消耗排行/分组日汇总/日报/利润预览/对账）中；
+	// 但计费所用的 cost 保持真实金额不变，因此余额/订阅/平台配额仍按真实金额
+	// 正常扣减——即"照样收钱、账面看不到该用户消耗"。
+	if user != nil && user.CostExempt {
+		zeroUsageLogCost(usageLog)
+	}
+
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
@@ -1294,6 +1302,30 @@ func resolveBillingMode(result *ForwardResult, cost *CostBreakdown) *string {
 		mode = string(BillingModeToken)
 	}
 	return &mode
+}
+
+// zeroUsageLogCost 将一次用量的落库金额字段归零（仅影响账面统计，不影响实际扣费）。
+// 用于成本豁免用户：保留用量行（请求数、token 数等仍可见），仅清空 usage_logs
+// 的金额相关列，使所有从 usage_logs 聚合的报表不再体现该用户消耗；实际扣费使用的
+// cost 不受影响，仍按真实金额正常扣减。
+func zeroUsageLogCost(usageLog *UsageLog) {
+	if usageLog == nil {
+		return
+	}
+	// 抹零前先保留真实费用到审计列：账面报表读 actual_cost（已被归零），
+	// 而 raw_actual_cost / raw_total_cost 保存真实金额，供运营直接查库审计真实扣费。
+	usageLog.RawActualCost = usageLog.ActualCost
+	usageLog.RawTotalCost = usageLog.TotalCost
+	usageLog.InputCost = 0
+	usageLog.ImageInputCost = 0
+	usageLog.OutputCost = 0
+	usageLog.ImageOutputCost = 0
+	usageLog.CacheCreationCost = 0
+	usageLog.CacheReadCost = 0
+	usageLog.TotalCost = 0
+	usageLog.ActualCost = 0
+	usageLog.LongContextBillingApplied = false
+	usageLog.AccountStatsCost = nil
 }
 
 func optionalSubscriptionID(subscription *UserSubscription) *int64 {

@@ -161,6 +161,10 @@ type UsageLog struct {
 	CacheReadCost             float64
 	TotalCost                 float64
 	ActualCost                float64
+	// RawActualCost / RawTotalCost 保存"成本豁免"用户在落库金额被抹零前的真实费用，
+	// 用于运营审计其真实扣费；非豁免用户这两列恒为 0（其真实费用直接体现在 actual_cost）。
+	RawActualCost            float64
+	RawTotalCost             float64
 	RateMultiplier            float64
 	LongContextBillingApplied bool
 	// AccountRateMultiplier 账号计费倍率快照（nil 表示历史数据，按 1.0 处理）

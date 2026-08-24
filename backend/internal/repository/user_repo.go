@@ -189,6 +189,7 @@ func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, 
 	if v, ok := groups[id]; ok {
 		out.AllowedGroups = v
 	}
+	r.loadCostExempt(ctx, out)
 	return out, nil
 }
 
@@ -206,6 +207,7 @@ func (r *userRepository) GetByIDIncludeDeleted(ctx context.Context, id int64) (*
 	if v, ok := groups[id]; ok {
 		out.AllowedGroups = v
 	}
+	r.loadCostExempt(ctx, out)
 	return out, nil
 }
 
@@ -1394,6 +1396,23 @@ func (r *userRepository) loadAllowedGroups(ctx context.Context, userIDs []int64)
 	}
 
 	return out, nil
+}
+
+// loadCostExempt 从 users 表的独立列读取成本豁免标记并写入 service.User。
+// 该列未纳入 ent schema，故用原生 SQL 读取；读取失败（表/列不存在）时安全降级为 false。
+// 成本豁免仅隐藏账面（落库金额归零），不影响对该用户的真实扣费。
+func (r *userRepository) loadCostExempt(ctx context.Context, user *service.User) {
+	if user == nil {
+		return
+	}
+	rows, err := r.sql.QueryContext(ctx, "SELECT cost_exempt FROM users WHERE id = $1", user.ID)
+	if err != nil {
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Next() {
+		_ = rows.Scan(&user.CostExempt)
+	}
 }
 
 // syncUserAllowedGroupsWithClient 在 ent client/事务内同步用户允许分组：

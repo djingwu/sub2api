@@ -55,6 +55,11 @@ type User struct {
 	// 且该 (用户, 分组) 无 rpm_override 时作为全局兜底生效，计数键 rpm:u:{userID}:{min}。
 	RPMLimit int
 
+	// CostExempt 成本豁免标记：为 true 时该用户用量落库成本字段归零，
+	// 账面统计不再体现其消耗，且跳过余额/订阅/平台配额扣减。
+	// 不持久化到 ent（users 表独立列），仅在加载用户时从数据库读取。
+	CostExempt bool `json:"cost_exempt"`
+
 	// UserGroupRPMOverride 来自 auth cache snapshot 的 (user, group) RPM 覆盖值。
 	// nil = 该 API Key 对应的 (user, group) 无 override；非 nil 时 checkRPM 直接使用，
 	// 避免每请求查 DB。字段不持久化到数据库。

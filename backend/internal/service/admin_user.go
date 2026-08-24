@@ -296,6 +296,17 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		}
 	}
 
+	// 成本豁免：users 表独立列，未纳入 ent schema，用原生 SQL 持久化。
+	if input.CostExempt != nil {
+		if s.entClient != nil {
+			if _, err := s.entClient.ExecContext(ctx, "UPDATE users SET cost_exempt = $1 WHERE id = $2", *input.CostExempt, user.ID); err != nil {
+				logger.LegacyPrintf("service.admin", "failed to set cost_exempt: user_id=%d err=%v", user.ID, err)
+			} else {
+				user.CostExempt = *input.CostExempt
+			}
+		}
+	}
+
 	if s.authCacheInvalidator != nil {
 		// RPMLimit 直接参与 billing_cache_service.checkRPM 的三级级联，
 		// allowed_groups 参与 API Key 专属分组授权判断；不失效缓存会让修改在一个 L2 TTL 内失去效果。

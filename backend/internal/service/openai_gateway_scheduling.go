@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
@@ -1318,6 +1319,7 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 			return accounts, err
 		}
 		accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
+		accounts = s.filterOpenAIAccountsByAllowedUsers(ctx, accounts)
 		if platform == PlatformGrok {
 			accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
 		}
@@ -1336,6 +1338,7 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 	accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
+	accounts = s.filterOpenAIAccountsByAllowedUsers(ctx, accounts)
 	if platform == PlatformGrok {
 		accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
 	}
@@ -1487,6 +1490,10 @@ func (s *OpenAIGatewayService) getSchedulableAccount(ctx context.Context, accoun
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
 		return nil, nil
 	}
+	// Sticky / non-list selection must honor the account user whitelist.
+	if !s.isOpenAIAccountAllowedForUser(ctx, account) {
+		return nil, nil
+	}
 	// Legacy sticky (advanced scheduler off) must still free-gate Grok OAuth.
 	if account.IsGrok() {
 		if gated := s.filterGrokFreeQuotaAccountsForOpenAI(ctx, []Account{*account}); len(gated) == 0 {
@@ -1503,6 +1510,46 @@ func (s *OpenAIGatewayService) filterGrokFreeQuotaAccountsForOpenAI(ctx context.
 		return accounts
 	}
 	return filterGrokFreeQuotaAccountsCore(ctx, s.cfg, s.usageLogRepo, &openaiGrokFreeQuotaGateCache, accounts)
+}
+
+// filterOpenAIAccountsByAllowedUsers 按账号用户白名单过滤候选账号（OpenAI 兼容网关路径）。
+// 白名单非空且当前请求用户不在白名单内 → 跳过该账号（其额度不会被他人消耗）。
+// 无法解析请求用户（ctx 无 UserID 或 <=0）时不限制，保持内部/管理探测调用向后兼容。
+func (s *OpenAIGatewayService) filterOpenAIAccountsByAllowedUsers(ctx context.Context, accounts []Account) []Account {
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	if userID <= 0 {
+		return accounts
+	}
+	hasWhitelist := false
+	for i := range accounts {
+		if len(accounts[i].AllowedUserIDs) > 0 {
+			hasWhitelist = true
+			break
+		}
+	}
+	if !hasWhitelist {
+		return accounts
+	}
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		if len(accounts[i].AllowedUserIDs) == 0 || containsInt64(accounts[i].AllowedUserIDs, userID) {
+			filtered = append(filtered, accounts[i])
+		}
+	}
+	return filtered
+}
+
+// isOpenAIAccountAllowedForUser 判断当前请求用户是否被允许使用该账号（OpenAI 兼容粘性/直取路径）。
+// 白名单为空或无法解析用户时放行（与 filterOpenAIAccountsByAllowedUsers 语义一致）。
+func (s *OpenAIGatewayService) isOpenAIAccountAllowedForUser(ctx context.Context, account *Account) bool {
+	if account == nil || len(account.AllowedUserIDs) == 0 {
+		return true
+	}
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	if userID <= 0 {
+		return true
+	}
+	return containsInt64(account.AllowedUserIDs, userID)
 }
 
 func (s *OpenAIGatewayService) filterOpenAIAccountsBySchedulingThreshold(ctx context.Context, accounts []Account) []Account {

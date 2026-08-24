@@ -104,6 +104,10 @@ type groupAwareMockAccountRepo struct {
 	allAccounts []Account
 }
 
+func (m *groupAwareMockAccountRepo) BindAllowedUsers(ctx context.Context, accountID int64, userIDs []int64) error {
+	return nil
+}
+
 // ListSchedulableUngroupedByPlatform 仅返回未分组账号（AccountGroups 为空）
 func (m *groupAwareMockAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	var result []Account

@@ -87,6 +87,9 @@ func (r *longContextBillingRepoStub) Create(_ context.Context, account *Account)
 	return nil
 }
 
+func (r *longContextBillingRepoStub) BindAllowedUsers(_ context.Context, _ int64, _ []int64) error {
+	return nil
+}
 func (r *longContextBillingRepoStub) GetByID(_ context.Context, _ int64) (*Account, error) {
 	return r.account, nil
 }

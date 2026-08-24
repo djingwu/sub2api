@@ -197,6 +197,10 @@ func (m *mockAccountRepoForGemini) RevertProxyFallback(ctx context.Context, acco
 	return nil
 }
 
+func (m *mockAccountRepoForGemini) BindAllowedUsers(ctx context.Context, accountID int64, userIDs []int64) error {
+	return nil
+}
+
 func (m *mockAccountRepoForGemini) ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error) {
 	return nil, nil
 }

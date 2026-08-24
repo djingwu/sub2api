@@ -76,7 +76,9 @@ func (s *accountRepoStubForBulkUpdate) Create(_ context.Context, account *Accoun
 	}
 	return s.createErr
 }
-
+func (s *accountRepoStubForBulkUpdate) BindAllowedUsers(_ context.Context, _ int64, _ []int64) error {
+	return nil
+}
 func (s *accountRepoStubForBulkUpdate) Update(_ context.Context, account *Account) error {
 	s.updatedAccounts = append(s.updatedAccounts, account)
 	return s.updateErr

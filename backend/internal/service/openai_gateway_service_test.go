@@ -68,6 +68,10 @@ func (r stubOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (*Account,
 	return nil, errors.New("account not found")
 }
 
+func (r stubOpenAIAccountRepo) BindAllowedUsers(ctx context.Context, accountID int64, userIDs []int64) error {
+	return nil
+}
+
 func (r stubOpenAIAccountRepo) GetByIDs(ctx context.Context, ids []int64) ([]*Account, error) {
 	if len(ids) == 0 {
 		return []*Account{}, nil

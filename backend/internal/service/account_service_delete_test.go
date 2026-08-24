@@ -36,6 +36,10 @@ func (s *accountRepoStub) Create(ctx context.Context, account *Account) error {
 	panic("unexpected Create call")
 }
 
+func (s *accountRepoStub) BindAllowedUsers(_ context.Context, _ int64, _ []int64) error {
+	return nil
+}
+
 func (s *accountRepoStub) GetByID(ctx context.Context, id int64) (*Account, error) {
 	panic("unexpected GetByID call")
 }
