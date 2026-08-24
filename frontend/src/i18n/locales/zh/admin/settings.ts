@@ -54,6 +54,12 @@ export default {
           models: '展示模型白名单',
           modelsHint: '仅展示列表中的模型，多个模型用英文逗号分隔；留空则展示渠道携带的全部模型。',
         },
+        pluginManagement: {
+          title: '插件管理',
+          description: '控制管理员侧边栏是否显示插件管理入口。此开关不控制插件运行状态。',
+          enabled: '显示插件管理菜单',
+          enabledHint: '关闭后仅隐藏侧边栏菜单；已加载或正在运行的插件不会因此停止。',
+        },
         riskControl: {
           title: '风控中心',
           description: '启用内容审计菜单和全端点请求审核入口。默认关闭。',
