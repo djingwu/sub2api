@@ -11123,6 +11123,33 @@ async function saveSettings() {
       }
     }
 
+    // 钉钉部门同步开启时禁止保存空的部门分组映射：映射一旦被清空，
+    // 新钉钉用户登录将无法按部门自动分配订阅（服务端同规则兜底）。
+    if (form.dingtalk_connect_sync_dept) {
+      let deptGroupMapValid = false;
+      if (form.dingtalk_dept_group_map?.trim()) {
+        try {
+          const parsed = JSON.parse(form.dingtalk_dept_group_map);
+          deptGroupMapValid =
+            typeof parsed === "object" &&
+            parsed !== null &&
+            !Array.isArray(parsed) &&
+            Object.keys(parsed).length > 0;
+        } catch {
+          deptGroupMapValid = false;
+        }
+      }
+      if (!deptGroupMapValid) {
+        appStore.showError(
+          localText(
+            "钉钉部门同步已开启，部门分组映射不能为空。请填写至少一个部门映射，例如 {\"123\": \"移动应用部\"}。",
+            "DingTalk department sync is enabled, so the department group map cannot be empty. Provide at least one mapping, e.g. {\"123\": \"Mobile App Dept\"}.",
+          ),
+        );
+        return;
+      }
+    }
+
     if (form.wechat_connect_mp_enabled && form.wechat_connect_mobile_enabled) {
       appStore.showError(
         localText(

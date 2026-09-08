@@ -435,6 +435,38 @@ docker compose -f docker-compose.local.yml pull
 docker compose -f docker-compose.local.yml up -d
 ```
 
+> **⚠️ 先确认运行中的镜像是官方镜像还是本地构建**
+>
+> 很多部署会用本地构建（如 `docker build -t weishaw/sub2api:latest .`）但沿用官方镜像
+> 的 tag 名称。在依赖 `docker compose pull` 升级前，请先确认容器实际运行的镜像来源：
+>
+> ```bash
+> # 1. 容器由哪个 compose 启动、使用的镜像名
+> docker inspect sub2api --format 'Image={{.Config.Image}} Created={{.Created}}'
+>
+> # 2. 若为本地构建，镜像历史会包含项目特有的构建层，例如：
+> #    COPY --chown=sub2api:sub2api /app/sub2api /app/sub2api
+> #    COPY --from=backend-builder /app/backend/resources /app/resources
+> docker history weishaw/sub2api:latest --format '{{.CreatedBy}}'
+>
+> # 3. 本地构建的镜像会把 deploy/.env 中的密钥烘焙进环境变量
+> #    （如 ADMIN_PASSWORD、TOTP_ENCRYPTION_KEY、AUTO_SETUP=true），官方镜像不会包含你的凭证：
+> docker inspect sub2api --format '{{json .Config.Env}}'
+>
+> # 4. docker-compose.override.yml 中 `image: sub2api:latest` 是强烈信号表明走本地构建。
+> #    注意运行中的容器仍可能使用基础 compose 文件（docker-compose.yml）的
+> #    image: weishaw/sub2api:latest，因此务必再核对 ImageID：
+> docker inspect sub2api --format '{{.Image}}'
+> ```
+>
+> 如果确认是本地构建，代码改动需要**重新构建镜像**才能生效，而不是 `docker compose pull`：
+>
+> ```bash
+> cd /path/to/sub2api
+> docker build -t weishaw/sub2api:latest .
+> docker compose -f deploy/docker-compose.yml up -d sub2api
+> ```
+
 #### 轻松迁移（本地目录版）
 
 使用 `docker-compose.local.yml` 时，可以轻松迁移到新服务器：

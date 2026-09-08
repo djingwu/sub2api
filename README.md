@@ -421,6 +421,39 @@ docker compose -f docker-compose.local.yml pull
 docker compose -f docker-compose.local.yml up -d
 ```
 
+> **⚠️ Verify whether the running image is the official one or a local build**
+>
+> Many deployments build the image locally (e.g. `docker build -t weishaw/sub2api:latest .`)
+> while keeping the official image tag name. Before relying on "pull latest", confirm which
+> image the container actually runs:
+>
+> ```bash
+> # 1. How the container was started and which image it uses
+> docker inspect sub2api --format 'Image={{.Config.Image}} Created={{.Created}}'
+>
+> # 2. If it was built locally, the image history contains a project-specific layer like:
+> #    COPY --chown=sub2api:sub2api /app/sub2api /app/sub2api
+> #    COPY --from=backend-builder /app/backend/resources /app/resources
+> docker history weishaw/sub2api:latest --format '{{.CreatedBy}}'
+>
+> # 3. A locally built image bakes in your own secrets from deploy/.env (e.g. ADMIN_PASSWORD,
+> #    TOTP_ENCRYPTION_KEY, AUTO_SETUP=true). The official image never contains your credentials:
+> docker inspect sub2api --format '{{json .Config.Env}}'
+>
+> # 4. A docker-compose.override.yml pointing `image: sub2api:latest` is a strong signal that
+> #    local builds are intended. Note: the running container may still use the compose base file
+> #    (docker-compose.yml) with image: weishaw/sub2api:latest, so always check the ImageID:
+> docker inspect sub2api --format '{{.Image}}'
+> ```
+>
+> If it is a local build, code changes require rebuilding the image, not `docker compose pull`:
+>
+> ```bash
+> cd /path/to/sub2api
+> docker build -t weishaw/sub2api:latest .
+> docker compose -f deploy/docker-compose.yml up -d sub2api
+> ```
+
 #### Easy Migration (Local Directory Version)
 
 When using `docker-compose.local.yml`, migrate to a new server easily:

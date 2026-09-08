@@ -856,6 +856,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// DingTalk 部门映射防清空保护：
+	// 保存设置是全量 PUT，前端或脚本一旦漏传 dingtalk_dept_group_map
+	// （或表单加载失败显示为空），请求值会退化为空串，直接写入会静默
+	// 清空已配置的部门映射，导致新钉钉用户无法按部门自动分配订阅。
+	// 因此请求为空时保留数据库中已有的值（只有显式提供非空 JSON 才覆盖）。
+	if strings.TrimSpace(req.DingTalkDeptGroupMap) == "" && previousSettings.DingTalkDeptGroupMap != "" {
+		req.DingTalkDeptGroupMap = previousSettings.DingTalkDeptGroupMap
+	}
+
 	// DingTalk Connect 参数验证
 	// 防御性：任何写入路径上把已废弃的 corp_restriction_policy=whitelist 入参 coerce 为 none，
 	// 避免任何直连 admin API 的客户端把死值写回 DB（前端 UI 已无此选项）。
