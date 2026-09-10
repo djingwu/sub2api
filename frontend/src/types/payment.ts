@@ -239,6 +239,7 @@ export interface PaymentMethodStats {
 export interface TopUserPaymentStats {
   user_id: number
   email: string
+  username?: string
   amount: number
 }
 

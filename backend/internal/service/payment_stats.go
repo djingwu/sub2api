@@ -138,7 +138,7 @@ func buildTopUsers(orders []*dbent.PaymentOrder) TopUsersByCurrency {
 		}
 		us, ok := users[o.UserID]
 		if !ok {
-			us = &TopUserStat{UserID: o.UserID, Email: o.UserEmail}
+			us = &TopUserStat{UserID: o.UserID, Email: o.UserEmail, Username: o.UserName}
 			users[o.UserID] = us
 		}
 		us.Amount += o.PayAmount

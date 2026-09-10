@@ -815,7 +815,7 @@ const guideActionRows = computed(() => [
 ])
 
 // User column display mode: 'email' or 'username'
-const userColumnMode = ref<'email' | 'username'>('email')
+const userColumnMode = ref<'email' | 'username'>('username')
 const USER_COLUMN_MODE_KEY = 'subscription-user-column-mode'
 
 const loadUserColumnMode = () => {

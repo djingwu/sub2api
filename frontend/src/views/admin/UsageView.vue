@@ -267,9 +267,9 @@ const handleUserClick = async (userId: number) => {
 
 // Drill down from the per-user token ranking: scope the whole usage view to
 // that user and jump to the usage-detail tab so the drill-down is visible.
-const handleRankingSelectUser = (userId: number, email: string) => {
+const handleRankingSelectUser = (userId: number, userLabel: string) => {
   filters.value = { ...filters.value, user_id: userId }
-  usageFiltersRef.value?.setUserKeyword?.(email || '')
+  usageFiltersRef.value?.setUserKeyword?.(userLabel || '')
   activeTab.value = 'usage'
   applyFilters()
 }
@@ -351,7 +351,7 @@ const loadRouteUserFilterLabel = async () => {
   try {
     const user = await adminAPI.users.getById(requestedUserId, true)
     if (!routeUserFilterIsCurrent()) return
-    usageFiltersRef.value?.setUserKeyword?.(user.email || String(requestedUserId))
+    usageFiltersRef.value?.setUserKeyword?.(user.username || user.email || String(requestedUserId))
   } catch {
     if (!routeUserFilterIsCurrent()) return
     usageFiltersRef.value?.setUserKeyword?.(String(requestedUserId))
@@ -599,7 +599,7 @@ const exportToExcel = async () => {
       )
       if (c.signal.aborted) break; if (p === 1) { total = res.total; exportProgress.total = total }
       const rows = (res.items || []).map((log: AdminUsageLog) => [
-        log.created_at, log.user?.email || '', log.api_key?.name || '', log.account?.name || '', log.model,
+        log.created_at, log.user?.username || log.user?.email || '', log.api_key?.name || '', log.account?.name || '', log.model,
         log.upstream_model || log.model, log.upstream_response_model || '', log.upstream_model_mismatch == null ? '' : t(log.upstream_model_mismatch ? 'common.yes' : 'common.no'), formatReasoningEffort(log.reasoning_effort), formatReasoningEffort(log.upstream_reasoning_effort || log.reasoning_effort), log.group?.name || '',
         log.inbound_endpoint || '', log.upstream_endpoint || '', getRequestTypeLabel(log),
         log.input_tokens, log.output_tokens, log.cache_read_tokens, log.cache_creation_tokens,

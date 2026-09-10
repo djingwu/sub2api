@@ -252,6 +252,7 @@ SELECT
   COALESCE(e.error_message, ''),
   e.user_id,
   COALESCE(u.email, ''),
+  COALESCE(u.username, ''),
   e.api_key_id,
   e.account_id,
   COALESCE(a.name, ''),
@@ -296,6 +297,7 @@ LIMIT $` + itoa(len(args)+1) + ` OFFSET $` + itoa(len(args)+2)
 		var groupID sql.NullInt64
 		var groupName string
 		var userEmail string
+		var userUsername string
 		var resolvedAt sql.NullTime
 		var resolvedBy sql.NullInt64
 		var resolvedByName string
@@ -322,6 +324,7 @@ LIMIT $` + itoa(len(args)+1) + ` OFFSET $` + itoa(len(args)+2)
 			&item.Message,
 			&userID,
 			&userEmail,
+			&userUsername,
 			&apiKeyID,
 			&accountID,
 			&accountName,
