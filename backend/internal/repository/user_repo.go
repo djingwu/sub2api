@@ -645,6 +645,8 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		}
 	}
 
+	r.loadCostExemptBatch(ctx, userMap)
+
 	return outUsers, paginationResultFromTotal(int64(total), params), nil
 }
 
@@ -1483,6 +1485,34 @@ func (r *userRepository) loadCostExempt(ctx context.Context, user *service.User)
 	defer func() { _ = rows.Close() }()
 	if rows.Next() {
 		_ = rows.Scan(&user.CostExempt)
+	}
+}
+
+// loadCostExemptBatch 批量读取成本豁免标记（列表页避免 N+1），语义同 loadCostExempt。
+func (r *userRepository) loadCostExemptBatch(ctx context.Context, userMap map[int64]*service.User) {
+	if len(userMap) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(userMap))
+	for id := range userMap {
+		ids = append(ids, id)
+	}
+	rows, err := r.sql.QueryContext(ctx, "SELECT id, cost_exempt FROM users WHERE id = ANY($1)", pq.Array(ids))
+	if err != nil {
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			id         int64
+			costExempt bool
+		)
+		if scanErr := rows.Scan(&id, &costExempt); scanErr != nil {
+			return
+		}
+		if u, ok := userMap[id]; ok {
+			u.CostExempt = costExempt
+		}
 	}
 }
 
