@@ -517,7 +517,9 @@ export default {
         concurrencyPlaceholder: '0 = unlimited',
         concurrencyHint: 'Max concurrent requests for this user; 0 = unlimited.',
         rpmLimitPlaceholder: '0 = unlimited',
-        rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.'
+        rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.',
+        costExempt: 'Cost Exempt',
+        costExemptHint: 'When enabled, this user’s usage is recorded as zero cost (hidden from statistics), but their balance is still charged as usual.'
       },
       columns: {
         user: 'User',
