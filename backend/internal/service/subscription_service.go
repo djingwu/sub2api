@@ -430,6 +430,7 @@ func (s *SubscriptionService) createSubscription(ctx context.Context, input *Ass
 		StartsAt:   now,
 		ExpiresAt:  expiresAt,
 		Status:     SubscriptionStatusActive,
+		AutoRenew:  true,
 		AssignedAt: now,
 		Notes:      input.Notes,
 		CreatedAt:  now,
