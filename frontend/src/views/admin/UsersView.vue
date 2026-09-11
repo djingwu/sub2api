@@ -885,9 +885,9 @@ const allColumns = computed<Column[]>(() => [
   { key: 'actions', label: t('admin.users.columns.actions'), sortable: false }
 ])
 
-// Columns that can be toggled (exclude email and actions which are always visible)
+// Columns that can be toggled (exclude actions which is always visible)
 const toggleableColumns = computed(() =>
-  allColumns.value.filter(col => col.key !== 'email' && col.key !== 'actions')
+  allColumns.value.filter(col => col.key !== 'actions')
 )
 
 // Hidden columns (stored in Set - columns NOT in this set are visible)
@@ -1014,9 +1014,7 @@ const hasVisibleAttributeColumns = computed(() =>
 
 // Filtered columns based on visibility
 const columns = computed<Column[]>(() =>
-  allColumns.value.filter(col =>
-    col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
-  )
+  allColumns.value.filter(col => !hiddenColumns.has(col.key))
 )
 
 const users = ref<AdminUser[]>([])
