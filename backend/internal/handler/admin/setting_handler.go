@@ -198,6 +198,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DingTalkConnectSyncCorpEmailAttrName:                   settings.DingTalkConnectSyncCorpEmailAttrName,
 		DingTalkConnectSyncDisplayNameAttrName:                 settings.DingTalkConnectSyncDisplayNameAttrName,
 		DingTalkConnectSyncDeptAttrName:                        settings.DingTalkConnectSyncDeptAttrName,
+		DingTalkDeptGroupMap:                                   settings.DingTalkDeptGroupMap,
 		WeChatConnectEnabled:                                   settings.WeChatConnectEnabled,
 		WeChatConnectAppID:                                     settings.WeChatConnectAppID,
 		WeChatConnectAppSecretConfigured:                       settings.WeChatConnectAppSecretConfigured,
