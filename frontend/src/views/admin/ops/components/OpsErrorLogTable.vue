@@ -72,9 +72,9 @@
               :title="t('admin.usage.clickToViewBalance')"
               @click.stop="emit('userClick', row.user_id, row.user_email)"
             >
-              {{ row.user_email }}
+              {{ row.username || row.user_email }}
             </button>
-            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.user_email || '-' }}</span>
+            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.username || row.user_email || '-' }}</span>
             <span class="ml-1 text-gray-500 dark:text-gray-400">#{{ row.user_id }}</span>
           </div>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
