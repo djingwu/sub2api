@@ -46,6 +46,9 @@ func (User) Fields() []ent.Field {
 		field.String("role").
 			MaxLen(20).
 			Default(domain.RoleUser),
+		field.Int64("primary_dept_id").
+			Optional().
+			Nillable(),
 		field.Float("balance").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),

@@ -212,6 +212,31 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
+    managerTeam: 'Department Team',
+  },
+
+  // Manager
+  manager: {
+    team: {
+      title: 'Department Team',
+      description: 'View subscriptions and usage for members in your departments, and reset quotas',
+      emptyTitle: 'No department members',
+      emptyDescription: 'No members with existing subscription records in your departments yet',
+      noSubscriptions: 'No subscription records for this member',
+      active: 'Active',
+      disabled: 'Disabled',
+      viewProgress: 'View progress',
+      resetQuota: 'Reset quota',
+      resetQuotaTitle: 'Reset Usage Quota',
+      resetQuotaConfirm: "Are you sure you want to reset daily/weekly/monthly usage for '{user}'?",
+      resetQuotaSuccess: 'Quota reset successfully',
+      resetQuotaFailed: 'Failed to reset quota',
+      progressTitle: 'Subscription Usage Progress',
+      loadFailed: 'Failed to load data',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+    }
   },
 
   // Auth

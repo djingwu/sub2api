@@ -109,6 +109,33 @@ func (_u *UserUpdate) SetNillableRole(v *string) *UserUpdate {
 	return _u
 }
 
+// SetPrimaryDeptID sets the "primary_dept_id" field.
+func (_u *UserUpdate) SetPrimaryDeptID(v int64) *UserUpdate {
+	_u.mutation.ResetPrimaryDeptID()
+	_u.mutation.SetPrimaryDeptID(v)
+	return _u
+}
+
+// SetNillablePrimaryDeptID sets the "primary_dept_id" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePrimaryDeptID(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetPrimaryDeptID(*v)
+	}
+	return _u
+}
+
+// AddPrimaryDeptID adds value to the "primary_dept_id" field.
+func (_u *UserUpdate) AddPrimaryDeptID(v int64) *UserUpdate {
+	_u.mutation.AddPrimaryDeptID(v)
+	return _u
+}
+
+// ClearPrimaryDeptID clears the value of the "primary_dept_id" field.
+func (_u *UserUpdate) ClearPrimaryDeptID() *UserUpdate {
+	_u.mutation.ClearPrimaryDeptID()
+	return _u
+}
+
 // SetBalance sets the "balance" field.
 func (_u *UserUpdate) SetBalance(v float64) *UserUpdate {
 	_u.mutation.ResetBalance()
@@ -1063,6 +1090,15 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.PrimaryDeptID(); ok {
+		_spec.SetField(user.FieldPrimaryDeptID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPrimaryDeptID(); ok {
+		_spec.AddField(user.FieldPrimaryDeptID, field.TypeInt64, value)
+	}
+	if _u.mutation.PrimaryDeptIDCleared() {
+		_spec.ClearField(user.FieldPrimaryDeptID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)
 	}
@@ -1892,6 +1928,33 @@ func (_u *UserUpdateOne) SetNillableRole(v *string) *UserUpdateOne {
 	if v != nil {
 		_u.SetRole(*v)
 	}
+	return _u
+}
+
+// SetPrimaryDeptID sets the "primary_dept_id" field.
+func (_u *UserUpdateOne) SetPrimaryDeptID(v int64) *UserUpdateOne {
+	_u.mutation.ResetPrimaryDeptID()
+	_u.mutation.SetPrimaryDeptID(v)
+	return _u
+}
+
+// SetNillablePrimaryDeptID sets the "primary_dept_id" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePrimaryDeptID(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetPrimaryDeptID(*v)
+	}
+	return _u
+}
+
+// AddPrimaryDeptID adds value to the "primary_dept_id" field.
+func (_u *UserUpdateOne) AddPrimaryDeptID(v int64) *UserUpdateOne {
+	_u.mutation.AddPrimaryDeptID(v)
+	return _u
+}
+
+// ClearPrimaryDeptID clears the value of the "primary_dept_id" field.
+func (_u *UserUpdateOne) ClearPrimaryDeptID() *UserUpdateOne {
+	_u.mutation.ClearPrimaryDeptID()
 	return _u
 }
 
@@ -2878,6 +2941,15 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PrimaryDeptID(); ok {
+		_spec.SetField(user.FieldPrimaryDeptID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPrimaryDeptID(); ok {
+		_spec.AddField(user.FieldPrimaryDeptID, field.TypeInt64, value)
+	}
+	if _u.mutation.PrimaryDeptIDCleared() {
+		_spec.ClearField(user.FieldPrimaryDeptID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)

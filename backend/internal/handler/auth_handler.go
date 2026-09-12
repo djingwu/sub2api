@@ -27,6 +27,7 @@ type AuthHandler struct {
 	redeemService        *service.RedeemService
 	totpService          *service.TotpService
 	userAttributeService *service.UserAttributeService
+	managerService       *service.ManagerService
 
 	dingTalkClientInstance *DingTalkClient
 	dingTalkClientMu       sync.Mutex
@@ -44,6 +45,11 @@ func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userSe
 		totpService:          totpService,
 		userAttributeService: userAttributeService,
 	}
+}
+
+// SetManagerService 注入部门经理服务（可选依赖，Wire provider 调用）。
+func (h *AuthHandler) SetManagerService(managerService *service.ManagerService) {
+	h.managerService = managerService
 }
 
 // RegisterRequest represents the registration request payload

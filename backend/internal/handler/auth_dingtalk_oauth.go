@@ -1102,6 +1102,9 @@ func (h *AuthHandler) syncDingTalkIdentity(ctx context.Context, cfg config.DingT
 			primaryDeptID = staff.DeptIDs[0]
 		}
 		slog.Info("dingtalk sync: pick primary dept", "user_id", userID, "all_dept_ids", staff.DeptIDs, "primary", primaryDeptID)
+		// 经理范围数据：持久化用户主部门快照 + 部门目录（含父级链），
+		// 供后端按 dept_id 做权限判断。失败仅记日志，不阻塞登录同步。
+		h.syncManagerScopeData(ctx, client, userID, primaryDeptID)
 		// 部门专属分组绑定：解析直属部门（叶子）向上的部门链，按链逐个匹配
 		// 映射表（settings.dingtalk_dept_group_map）。叶子命中 → 绑该部门；
 		// 叶子未命中向上找父部门，第一个命中即绑定目标；全链未命中 → 不分配。
@@ -1294,4 +1297,42 @@ func (h *AuthHandler) resolveDingTalkDeptChain(ctx context.Context, client *Ding
 	}
 
 	return chain, nil
+}
+
+// syncManagerScopeData 把经理权限所需的规范化数据落到本地：
+//   - users.primary_dept_id：用户主部门快照（权限判断只认 dept_id）
+//   - dingtalk_departments：主部门及其父级链的目录缓存（名称/父 ID）
+//
+// 依赖 managerService 注入；缺失或失败仅记日志，不影响登录。
+func (h *AuthHandler) syncManagerScopeData(ctx context.Context, client *DingTalkClient, userID, primaryDeptID int64) {
+	if h.managerService == nil || primaryDeptID <= 0 {
+		return
+	}
+	if err := h.managerService.SetUserPrimaryDept(ctx, userID, primaryDeptID); err != nil {
+		slog.Warn("dingtalk sync: failed to persist primary dept", "user_id", userID, "dept_id", primaryDeptID, "err", err)
+	}
+	if client == nil {
+		return
+	}
+	chain, err := h.resolveDingTalkDeptChain(ctx, client, primaryDeptID)
+	if err != nil {
+		slog.Warn("dingtalk sync: failed to resolve dept chain for directory", "user_id", userID, "dept_id", primaryDeptID, "err", err)
+		return
+	}
+	for _, deptID := range chain {
+		info, err := client.GetDeptInfo(ctx, deptID)
+		if err != nil {
+			slog.Warn("dingtalk sync: failed to fetch dept info for directory", "dept_id", deptID, "err", err)
+			continue
+		}
+		if err := h.managerService.UpsertDepartment(ctx, &service.DingTalkDepartment{
+			DeptID:   info.DeptID,
+			ParentID: info.ParentID,
+			Name:     info.Name,
+			IsActive: true,
+			SyncedAt: time.Now(),
+		}); err != nil {
+			slog.Warn("dingtalk sync: failed to upsert department directory", "dept_id", deptID, "err", err)
+		}
+	}
 }

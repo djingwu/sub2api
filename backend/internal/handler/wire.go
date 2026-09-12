@@ -171,6 +171,24 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 	return h
 }
 
+// ProvideAuthHandler constructs AuthHandler and injects the optional manager
+// service. Keeping one constructor avoids duplicate bindings and cycles.
+func ProvideAuthHandler(
+	cfg *config.Config,
+	authService *service.AuthService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	promoService *service.PromoService,
+	redeemService *service.RedeemService,
+	totpService *service.TotpService,
+	userAttributeService *service.UserAttributeService,
+	managerService *service.ManagerService,
+) *AuthHandler {
+	authHandler := NewAuthHandler(cfg, authService, userService, settingService, promoService, redeemService, totpService, userAttributeService)
+	authHandler.SetManagerService(managerService)
+	return authHandler
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -179,6 +197,7 @@ func ProvideHandlers(
 	usageHandler *UsageHandler,
 	redeemHandler *RedeemHandler,
 	subscriptionHandler *SubscriptionHandler,
+	managerHandler *ManagerHandler,
 	announcementHandler *AnnouncementHandler,
 	channelMonitorUserHandler *ChannelMonitorUserHandler,
 	channelMonitorV2Handler *ChannelMonitorV2Handler,
@@ -205,6 +224,7 @@ func ProvideHandlers(
 		Usage:            usageHandler,
 		Redeem:           redeemHandler,
 		Subscription:     subscriptionHandler,
+		Manager:          managerHandler,
 		Announcement:     announcementHandler,
 		ChannelMonitor:   channelMonitorUserHandler,
 		ChannelMonitorV2: channelMonitorV2Handler,
@@ -226,12 +246,13 @@ func ProvideHandlers(
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
-	NewAuthHandler,
+	ProvideAuthHandler,
 	NewUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,
+	NewManagerHandler,
 	NewAnnouncementHandler,
 	NewChannelMonitorUserHandler,
 	NewChannelMonitorV2Handler,

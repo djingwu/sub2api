@@ -957,12 +957,22 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
+	ProvideManagerService,
 )
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {
 	svc := NewUserPlatformQuotaUsageFlusher(cfg, cache, quotaRepo, tw)
 	svc.Start()
+	return svc
+}
+
+// ProvideManagerService 组装部门经理服务并注入订阅额度重置与进度查询实现。
+// 返回接口由 Handler 消费；用 wire.Struct 避免自引用循环，setter 在此完成注入。
+func ProvideManagerService(scopeRepo ManagerScopeRepository, userRepo UserRepository, subRepo UserSubscriptionRepository, subscriptionService *SubscriptionService) *ManagerService {
+	svc := NewManagerService(scopeRepo, userRepo, subRepo)
+	svc.SetQuotaResetter(subscriptionService.AdminResetQuota)
+	svc.SetProgressProvider(subscriptionService.GetSubscriptionProgress)
 	return svc
 }
 

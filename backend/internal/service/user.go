@@ -18,6 +18,7 @@ type User struct {
 	AvatarSHA256   string
 	PasswordHash   string
 	Role           string
+	PrimaryDeptID  *int64
 	Balance        float64
 	FrozenBalance  float64
 	Concurrency    int

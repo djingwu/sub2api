@@ -396,6 +396,20 @@ const routes: RouteRecordRaw[] = [
     }
   },
 
+  // ==================== Manager Routes ====================
+  {
+    path: '/manager/team',
+    name: 'ManagerTeam',
+    component: () => import('@/views/manager/ManagerTeamView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresManager: true,
+      title: 'Department Team',
+      titleKey: 'manager.team.title',
+      descriptionKey: 'manager.team.description'
+    }
+  },
+
   // ==================== Admin Routes ====================
   {
     path: '/admin',
@@ -889,6 +903,13 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
+  // Check department-manager requirement
+  const requiresManager = to.meta.requiresManager === true
+  if (requiresManager && !authStore.isManager && !authStore.isAdmin) {
+    next('/dashboard')
+    return
+  }
+
   if (requiresAdmin && authStore.isAdmin) {
     const adminComplianceStore = useAdminComplianceStore()
     if (!adminComplianceStore.initialized) {
@@ -954,6 +975,11 @@ router.beforeEach(async (to, _from, next) => {
   // Backend mode: admin gets full access, non-admin blocked
   if (appStore.backendModeEnabled) {
     if (authStore.isAuthenticated && authStore.isAdmin) {
+      next()
+      return
+    }
+    // Managers can access their scoped pages in backend mode
+    if (authStore.isAuthenticated && authStore.isManager && requiresManager) {
       next()
       return
     }

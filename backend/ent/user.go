@@ -29,6 +29,8 @@ type User struct {
 	PasswordHash string `json:"password_hash,omitempty"`
 	// Role holds the value of the "role" field.
 	Role string `json:"role,omitempty"`
+	// PrimaryDeptID holds the value of the "primary_dept_id" field.
+	PrimaryDeptID *int64 `json:"primary_dept_id,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance float64 `json:"balance,omitempty"`
 	// FrozenBalance holds the value of the "frozen_balance" field.
@@ -265,7 +267,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldConcurrency, user.FieldRpmLimit:
+		case user.FieldID, user.FieldPrimaryDeptID, user.FieldConcurrency, user.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails:
 			values[i] = new(sql.NullString)
@@ -328,6 +330,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field role", values[i])
 			} else if value.Valid {
 				_m.Role = value.String
+			}
+		case user.FieldPrimaryDeptID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field primary_dept_id", values[i])
+			} else if value.Valid {
+				_m.PrimaryDeptID = new(int64)
+				*_m.PrimaryDeptID = value.Int64
 			}
 		case user.FieldBalance:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -583,6 +592,11 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("role=")
 	builder.WriteString(_m.Role)
+	builder.WriteString(", ")
+	if v := _m.PrimaryDeptID; v != nil {
+		builder.WriteString("primary_dept_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Balance))

@@ -129,6 +129,21 @@
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <div class="sidebar-section">
+          <!-- Manager section (department managers only) -->
+          <template v-if="authStore.isManager">
+            <router-link
+              v-for="item in managerNavItems"
+              :key="item.path"
+              :to="item.path"
+              class="sidebar-link mb-1"
+              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+              :title="sidebarCollapsed ? item.label : undefined"
+              @click="handleMenuItemClick(item.path)"
+            >
+              <component :is="item.icon" class="h-5 w-5 flex-shrink-0" />
+              <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            </router-link>
+          </template>
           <router-link
             v-for="item in userNavItems"
             :key="item.path"
@@ -252,6 +267,11 @@ const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
+
+// Manager nav item: a scoped team page for department managers.
+const managerNavItems = computed((): NavItem[] => [
+  { path: '/manager/team', label: t('nav.managerTeam'), icon: UsersIcon }
+])
 
 // Per-group expand/collapse overrides. A group with no entry follows the
 // automatic behavior (expanded while the active route is one of its children);

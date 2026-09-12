@@ -85,6 +85,11 @@ func Role(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRole, v))
 }
 
+// PrimaryDeptID applies equality check predicate on the "primary_dept_id" field. It's identical to PrimaryDeptIDEQ.
+func PrimaryDeptID(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPrimaryDeptID, v))
+}
+
 // Balance applies equality check predicate on the "balance" field. It's identical to BalanceEQ.
 func Balance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
@@ -503,6 +508,56 @@ func RoleEqualFold(v string) predicate.User {
 // RoleContainsFold applies the ContainsFold predicate on the "role" field.
 func RoleContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldRole, v))
+}
+
+// PrimaryDeptIDEQ applies the EQ predicate on the "primary_dept_id" field.
+func PrimaryDeptIDEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPrimaryDeptID, v))
+}
+
+// PrimaryDeptIDNEQ applies the NEQ predicate on the "primary_dept_id" field.
+func PrimaryDeptIDNEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPrimaryDeptID, v))
+}
+
+// PrimaryDeptIDIn applies the In predicate on the "primary_dept_id" field.
+func PrimaryDeptIDIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPrimaryDeptID, vs...))
+}
+
+// PrimaryDeptIDNotIn applies the NotIn predicate on the "primary_dept_id" field.
+func PrimaryDeptIDNotIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPrimaryDeptID, vs...))
+}
+
+// PrimaryDeptIDGT applies the GT predicate on the "primary_dept_id" field.
+func PrimaryDeptIDGT(v int64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPrimaryDeptID, v))
+}
+
+// PrimaryDeptIDGTE applies the GTE predicate on the "primary_dept_id" field.
+func PrimaryDeptIDGTE(v int64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPrimaryDeptID, v))
+}
+
+// PrimaryDeptIDLT applies the LT predicate on the "primary_dept_id" field.
+func PrimaryDeptIDLT(v int64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPrimaryDeptID, v))
+}
+
+// PrimaryDeptIDLTE applies the LTE predicate on the "primary_dept_id" field.
+func PrimaryDeptIDLTE(v int64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPrimaryDeptID, v))
+}
+
+// PrimaryDeptIDIsNil applies the IsNil predicate on the "primary_dept_id" field.
+func PrimaryDeptIDIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldPrimaryDeptID))
+}
+
+// PrimaryDeptIDNotNil applies the NotNil predicate on the "primary_dept_id" field.
+func PrimaryDeptIDNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldPrimaryDeptID))
 }
 
 // BalanceEQ applies the EQ predicate on the "balance" field.

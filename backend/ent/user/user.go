@@ -27,6 +27,8 @@ const (
 	FieldPasswordHash = "password_hash"
 	// FieldRole holds the string denoting the role field in the database.
 	FieldRole = "role"
+	// FieldPrimaryDeptID holds the string denoting the primary_dept_id field in the database.
+	FieldPrimaryDeptID = "primary_dept_id"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
 	// FieldFrozenBalance holds the string denoting the frozen_balance field in the database.
@@ -218,6 +220,7 @@ var Columns = []string{
 	FieldEmail,
 	FieldPasswordHash,
 	FieldRole,
+	FieldPrimaryDeptID,
 	FieldBalance,
 	FieldFrozenBalance,
 	FieldConcurrency,
@@ -352,6 +355,11 @@ func ByPasswordHash(opts ...sql.OrderTermOption) OrderOption {
 // ByRole orders the results by the role field.
 func ByRole(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRole, opts...).ToFunc()
+}
+
+// ByPrimaryDeptID orders the results by the primary_dept_id field.
+func ByPrimaryDeptID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPrimaryDeptID, opts...).ToFunc()
 }
 
 // ByBalance orders the results by the balance field.

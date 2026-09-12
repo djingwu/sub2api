@@ -146,6 +146,7 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		SetNotes(userIn.Notes).
 		SetPasswordHash(userIn.PasswordHash).
 		SetRole(userIn.Role).
+		SetNillablePrimaryDeptID(userIn.PrimaryDeptID).
 		SetBalance(userIn.Balance).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
@@ -309,6 +310,13 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	}
 	if fields.Role {
 		updateOp = updateOp.SetRole(userIn.Role)
+	}
+	if fields.PrimaryDeptID {
+		if userIn.PrimaryDeptID == nil {
+			updateOp = updateOp.ClearPrimaryDeptID()
+		} else {
+			updateOp = updateOp.SetPrimaryDeptID(*userIn.PrimaryDeptID)
+		}
 	}
 	if fields.Concurrency {
 		updateOp = updateOp.SetConcurrency(userIn.Concurrency)
@@ -1586,6 +1594,7 @@ func applyUserEntityToService(dst *service.User, src *dbent.User) {
 	dst.LastActiveAt = src.LastActiveAt
 	dst.CreatedAt = src.CreatedAt
 	dst.UpdatedAt = src.UpdatedAt
+	dst.PrimaryDeptID = src.PrimaryDeptID
 }
 
 func userSignupSourceOrDefault(signupSource string) string {

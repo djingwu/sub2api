@@ -212,6 +212,31 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+    managerTeam: '部门团队',
+  },
+
+  // Manager
+  manager: {
+    team: {
+      title: '部门团队',
+      description: '查看负责部门内成员的订阅与用量，并可重置额度',
+      emptyTitle: '暂无部门成员',
+      emptyDescription: '负责部门内还没有已有订阅记录的成员',
+      noSubscriptions: '该成员暂无订阅记录',
+      active: '正常',
+      disabled: '已禁用',
+      viewProgress: '查看进度',
+      resetQuota: '重置额度',
+      resetQuotaTitle: '重置用量额度',
+      resetQuotaConfirm: "确定要重置 '{user}' 的日/周/月用量额度吗？",
+      resetQuotaSuccess: '额度重置成功',
+      resetQuotaFailed: '额度重置失败',
+      progressTitle: '订阅使用进度',
+      loadFailed: '数据加载失败',
+      daily: '日',
+      weekly: '周',
+      monthly: '月',
+    }
   },
 
   // Auth

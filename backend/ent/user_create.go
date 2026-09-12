@@ -103,6 +103,20 @@ func (_c *UserCreate) SetNillableRole(v *string) *UserCreate {
 	return _c
 }
 
+// SetPrimaryDeptID sets the "primary_dept_id" field.
+func (_c *UserCreate) SetPrimaryDeptID(v int64) *UserCreate {
+	_c.mutation.SetPrimaryDeptID(v)
+	return _c
+}
+
+// SetNillablePrimaryDeptID sets the "primary_dept_id" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePrimaryDeptID(v *int64) *UserCreate {
+	if v != nil {
+		_c.SetPrimaryDeptID(*v)
+	}
+	return _c
+}
+
 // SetBalance sets the "balance" field.
 func (_c *UserCreate) SetBalance(v float64) *UserCreate {
 	_c.mutation.SetBalance(v)
@@ -833,6 +847,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldRole, field.TypeString, value)
 		_node.Role = value
 	}
+	if value, ok := _c.mutation.PrimaryDeptID(); ok {
+		_spec.SetField(user.FieldPrimaryDeptID, field.TypeInt64, value)
+		_node.PrimaryDeptID = &value
+	}
 	if value, ok := _c.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)
 		_node.Balance = value
@@ -1259,6 +1277,30 @@ func (u *UserUpsert) UpdateRole() *UserUpsert {
 	return u
 }
 
+// SetPrimaryDeptID sets the "primary_dept_id" field.
+func (u *UserUpsert) SetPrimaryDeptID(v int64) *UserUpsert {
+	u.Set(user.FieldPrimaryDeptID, v)
+	return u
+}
+
+// UpdatePrimaryDeptID sets the "primary_dept_id" field to the value that was provided on create.
+func (u *UserUpsert) UpdatePrimaryDeptID() *UserUpsert {
+	u.SetExcluded(user.FieldPrimaryDeptID)
+	return u
+}
+
+// AddPrimaryDeptID adds v to the "primary_dept_id" field.
+func (u *UserUpsert) AddPrimaryDeptID(v int64) *UserUpsert {
+	u.Add(user.FieldPrimaryDeptID, v)
+	return u
+}
+
+// ClearPrimaryDeptID clears the value of the "primary_dept_id" field.
+func (u *UserUpsert) ClearPrimaryDeptID() *UserUpsert {
+	u.SetNull(user.FieldPrimaryDeptID)
+	return u
+}
+
 // SetBalance sets the "balance" field.
 func (u *UserUpsert) SetBalance(v float64) *UserUpsert {
 	u.Set(user.FieldBalance, v)
@@ -1672,6 +1714,34 @@ func (u *UserUpsertOne) SetRole(v string) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateRole() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRole()
+	})
+}
+
+// SetPrimaryDeptID sets the "primary_dept_id" field.
+func (u *UserUpsertOne) SetPrimaryDeptID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPrimaryDeptID(v)
+	})
+}
+
+// AddPrimaryDeptID adds v to the "primary_dept_id" field.
+func (u *UserUpsertOne) AddPrimaryDeptID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPrimaryDeptID(v)
+	})
+}
+
+// UpdatePrimaryDeptID sets the "primary_dept_id" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdatePrimaryDeptID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePrimaryDeptID()
+	})
+}
+
+// ClearPrimaryDeptID clears the value of the "primary_dept_id" field.
+func (u *UserUpsertOne) ClearPrimaryDeptID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearPrimaryDeptID()
 	})
 }
 
@@ -2303,6 +2373,34 @@ func (u *UserUpsertBulk) SetRole(v string) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateRole() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRole()
+	})
+}
+
+// SetPrimaryDeptID sets the "primary_dept_id" field.
+func (u *UserUpsertBulk) SetPrimaryDeptID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPrimaryDeptID(v)
+	})
+}
+
+// AddPrimaryDeptID adds v to the "primary_dept_id" field.
+func (u *UserUpsertBulk) AddPrimaryDeptID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPrimaryDeptID(v)
+	})
+}
+
+// UpdatePrimaryDeptID sets the "primary_dept_id" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdatePrimaryDeptID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePrimaryDeptID()
+	})
+}
+
+// ClearPrimaryDeptID clears the value of the "primary_dept_id" field.
+func (u *UserUpsertBulk) ClearPrimaryDeptID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearPrimaryDeptID()
 	})
 }
 

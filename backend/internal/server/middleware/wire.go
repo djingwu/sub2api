@@ -14,6 +14,9 @@ type OptionalJWTAuthMiddleware gin.HandlerFunc
 // AdminAuthMiddleware 管理员认证中间件类型
 type AdminAuthMiddleware gin.HandlerFunc
 
+// ManagerOnlyMiddleware 部门经理角色中间件类型（挂在 JWTAuth 之后）
+type ManagerOnlyMiddleware gin.HandlerFunc
+
 // APIKeyAuthMiddleware API Key 认证中间件类型
 type APIKeyAuthMiddleware gin.HandlerFunc
 
@@ -22,7 +25,13 @@ var ProviderSet = wire.NewSet(
 	NewJWTAuthMiddleware,
 	NewOptionalJWTAuthMiddleware,
 	NewAdminAuthMiddleware,
+	NewManagerOnlyMiddleware,
 	NewAPIKeyAuthMiddleware,
 	NewAuditLogMiddleware,
 	NewStepUpAuthMiddleware,
 )
+
+// NewManagerOnlyMiddleware 创建部门经理角色中间件
+func NewManagerOnlyMiddleware() ManagerOnlyMiddleware {
+	return ManagerOnlyMiddleware(ManagerOnly())
+}
