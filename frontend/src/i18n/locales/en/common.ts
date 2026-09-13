@@ -237,6 +237,13 @@ export default {
       daily: 'Daily',
       weekly: 'Weekly',
       monthly: 'Monthly',
+      expires: 'Expires',
+      daysRemaining: '{days} days remaining',
+      remaining: 'Remaining',
+      resetsIn: 'Resets in',
+      resetAt: 'Reset at',
+      startedAt: 'Started at',
+      noUsageWindows: 'No limited usage windows are active'
     }
   },
 

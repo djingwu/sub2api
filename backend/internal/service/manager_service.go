@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
 var (
@@ -20,9 +20,9 @@ var (
 // 所有列表/进度/重置操作都在后端按操作者的负责部门做范围校验，
 // 不信任 URL 中的用户或订阅 ID。
 type ManagerService struct {
-	scopeRepo     ManagerScopeRepository
-	userRepo      UserRepository
-	subRepo       UserSubscriptionRepository
+	scopeRepo        ManagerScopeRepository
+	userRepo         UserRepository
+	subRepo          UserSubscriptionRepository
 	quotaResetter    func(ctx context.Context, subscriptionID int64, resetDaily, resetWeekly, resetMonthly bool) (*UserSubscription, error)
 	progressProvider func(ctx context.Context, subscriptionID int64) (*SubscriptionProgress, error)
 	now              func() time.Time
@@ -146,6 +146,9 @@ func (s *ManagerService) GetSubscriptionProgressInScope(ctx context.Context, man
 	}
 	if err := s.RequireUserInScope(ctx, managerUserID, sub.UserID); err != nil {
 		return nil, err
+	}
+	if s.progressProvider == nil {
+		return nil, ErrInvalidInput
 	}
 	return s.progressProvider(ctx, subscriptionID)
 }

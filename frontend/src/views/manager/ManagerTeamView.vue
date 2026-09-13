@@ -161,7 +161,8 @@
             :page="page"
             :page-size="pageSize"
             :total="total"
-            @page-change="handlePageChange"
+            @update:page="handlePageChange"
+            @update:pageSize="handlePageSizeChange"
           />
         </div>
       </template>
@@ -172,7 +173,63 @@
       <div v-if="progressLoading" class="flex justify-center py-8">
         <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
       </div>
-      <pre v-else class="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-dark-700 dark:text-gray-300">{{ progressText }}</pre>
+      <div v-else-if="progressError" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+        {{ progressError }}
+      </div>
+      <div v-else-if="progress" class="space-y-4">
+        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-700/60">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div class="font-semibold text-gray-900 dark:text-white">{{ progress.group_name }}</div>
+              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">#{{ progress.id }}</div>
+            </div>
+            <div class="text-right text-sm text-gray-600 dark:text-gray-300">
+              <div>{{ t('manager.team.expires') }}: {{ formatDate(progress.expires_at) }}</div>
+              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('manager.team.daysRemaining', { days: progress.expires_in_days }) }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="progressWindows.length" class="grid gap-3 sm:grid-cols-3">
+          <div
+            v-for="item in progressWindows"
+            :key="item.key"
+            class="rounded-xl border border-gray-100 p-3 dark:border-dark-700"
+          >
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="font-medium text-gray-900 dark:text-white">{{ item.label }}</span>
+              <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ item.window.percentage.toFixed(1) }}%</span>
+            </div>
+            <div class="h-2 rounded-full bg-gray-200 dark:bg-dark-600">
+              <div
+                class="h-2 rounded-full"
+                :class="progressBarClass(item.window.used_usd, item.window.limit_usd)"
+                :style="{ width: `${Math.min(100, Math.max(0, item.window.percentage))}%` }"
+              ></div>
+            </div>
+            <div class="mt-2 text-xs tabular-nums text-gray-600 dark:text-gray-300">
+              ${{ item.window.used_usd.toFixed(2) }} / ${{ item.window.limit_usd.toFixed(2) }}
+            </div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('manager.team.remaining') }}: ${{ item.window.remaining_usd.toFixed(2) }}
+            </div>
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('manager.team.resetsIn') }}: {{ formatResetTime(item.window.resets_in_seconds) }}
+            </div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('manager.team.startedAt') }}: {{ formatDate(item.window.window_start) }}
+            </div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('manager.team.resetAt') }}: {{ formatDate(item.window.resets_at) }}
+            </div>
+          </div>
+        </div>
+        <div v-else class="rounded-xl border border-dashed border-gray-200 p-4 text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+          {{ t('manager.team.noUsageWindows') }}
+        </div>
+      </div>
       <template #footer>
         <div class="flex justify-end">
           <button type="button" class="btn btn-secondary" @click="showProgressModal = false">{{ t('common.close') }}</button>
@@ -194,10 +251,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { managerAPI, type ManagerMember } from '@/api/manager'
-import type { UserSubscription, SubscriptionProgress } from '@/types'
+import type { UserSubscription, SubscriptionProgress, SubscriptionProgressWindow } from '@/types'
 import { useAppStore } from '@/stores/app'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -219,7 +276,16 @@ const total = ref(0)
 
 const showProgressModal = ref(false)
 const progressLoading = ref(false)
-const progressText = ref('')
+const progress = ref<SubscriptionProgress | null>(null)
+const progressError = ref('')
+
+const progressWindows = computed(() => {
+  const items: Array<{ key: string; label: string; window: SubscriptionProgressWindow }> = []
+  if (progress.value?.daily) items.push({ key: 'daily', label: t('manager.team.daily'), window: progress.value.daily })
+  if (progress.value?.weekly) items.push({ key: 'weekly', label: t('manager.team.weekly'), window: progress.value.weekly })
+  if (progress.value?.monthly) items.push({ key: 'monthly', label: t('manager.team.monthly'), window: progress.value.monthly })
+  return items
+})
 
 const showResetDialog = ref(false)
 const resettingSub = ref<UserSubscription | null>(null)
@@ -245,15 +311,21 @@ function handlePageChange(p: number) {
   loadMembers()
 }
 
+function handlePageSizeChange(nextPageSize: number) {
+  pageSize.value = nextPageSize
+  page.value = 1
+  loadMembers()
+}
+
 async function openProgress(sub: UserSubscription) {
   showProgressModal.value = true
   progressLoading.value = true
-  progressText.value = ''
+  progress.value = null
+  progressError.value = ''
   try {
-    const progress: SubscriptionProgress = await managerAPI.getSubscriptionProgress(sub.id)
-    progressText.value = JSON.stringify(progress, null, 2)
+    progress.value = await managerAPI.getSubscriptionProgress(sub.id)
   } catch (e: any) {
-    progressText.value = e?.message || t('manager.team.loadFailed')
+    progressError.value = e?.message || t('manager.team.loadFailed')
   } finally {
     progressLoading.value = false
   }
@@ -292,6 +364,21 @@ function progressBarClass(usage: number | undefined, limit: number): string {
   if (pct >= 100) return 'bg-red-500'
   if (pct >= 80) return 'bg-amber-500'
   return 'bg-emerald-500'
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function formatResetTime(seconds: number): string {
+  const totalMinutes = Math.max(0, Math.floor(seconds / 60))
+  const days = Math.floor(totalMinutes / (24 * 60))
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+  const minutes = totalMinutes % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
 }
 
 onMounted(loadMembers)

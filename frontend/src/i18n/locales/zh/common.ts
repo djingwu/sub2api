@@ -237,6 +237,13 @@ export default {
       daily: '日',
       weekly: '周',
       monthly: '月',
+      expires: '到期时间',
+      daysRemaining: '剩余 {days} 天',
+      remaining: '剩余',
+      resetsIn: '重置倒计时',
+      resetAt: '重置时间',
+      startedAt: '开始时间',
+      noUsageWindows: '当前没有启用限额窗口'
     }
   },
 
