@@ -213,6 +213,7 @@ export default {
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
     managerTeam: '部门团队',
+    managerScopes: '经理部门范围',
   },
 
   // Manager

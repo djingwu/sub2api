@@ -464,6 +464,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/manager-scopes',
+    name: 'AdminManagerScopes',
+    component: () => import('@/views/admin/ManagerScopesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Manager Department Scopes',
+      titleKey: 'admin.managerScopes.title',
+      descriptionKey: 'admin.managerScopes.description'
+    }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),

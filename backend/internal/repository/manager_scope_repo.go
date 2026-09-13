@@ -12,6 +12,7 @@ import (
 )
 
 type managerScopeRepository struct {
+	db  *sql.DB
 	sql sqlExecutor
 }
 
@@ -28,7 +29,7 @@ const managerScopeUserWhere = `
 	  )`
 
 func NewManagerScopeRepository(sqlDB *sql.DB) service.ManagerScopeRepository {
-	return &managerScopeRepository{sql: sqlDB}
+	return &managerScopeRepository{db: sqlDB, sql: sqlDB}
 }
 
 func (r *managerScopeRepository) UpsertDepartment(ctx context.Context, department *service.DingTalkDepartment) error {
@@ -131,17 +132,31 @@ func (r *managerScopeRepository) ReplaceManagerDepartments(ctx context.Context, 
 	sort.Slice(deduped, func(i, j int) bool { return deduped[i] < deduped[j] })
 	deptIDs = deduped
 
-	if _, err := r.sql.ExecContext(ctx, `DELETE FROM user_manager_departments WHERE manager_user_id = $1`, managerUserID); err != nil {
+	return r.runInTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM user_manager_departments WHERE manager_user_id = $1`, managerUserID); err != nil {
+			return err
+		}
+		if len(deptIDs) == 0 {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO user_manager_departments (manager_user_id, dept_id)
+			SELECT $1, unnest($2::bigint[])
+			ON CONFLICT (manager_user_id, dept_id) DO NOTHING`, managerUserID, pq.Array(deptIDs))
+		return err
+	})
+}
+
+func (r *managerScopeRepository) runInTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin manager scope transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := fn(tx); err != nil {
 		return err
 	}
-	if len(deptIDs) == 0 {
-		return nil
-	}
-	_, err := r.sql.ExecContext(ctx, `
-		INSERT INTO user_manager_departments (manager_user_id, dept_id)
-		SELECT $1, unnest($2::bigint[])
-		ON CONFLICT (manager_user_id, dept_id) DO NOTHING`, managerUserID, pq.Array(deptIDs))
-	return err
+	return tx.Commit()
 }
 
 func (r *managerScopeRepository) IsUserInManagerScope(ctx context.Context, managerUserID, userID int64) (bool, error) {

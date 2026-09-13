@@ -40,6 +40,9 @@ func RegisterAdminRoutes(
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
 
+		// 部门经理范围配置
+		registerManagerScopeRoutes(admin, h)
+
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
@@ -130,6 +133,16 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerManagerScopeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	scopes := admin.Group("/manager-scopes")
+	{
+		scopes.GET("/departments", h.Admin.ManagerScope.ListDepartments)
+		scopes.GET("/managers", h.Admin.ManagerScope.ListManagers)
+		scopes.GET("/managers/:manager_id/departments", h.Admin.ManagerScope.ListManagerDepartments)
+		scopes.PUT("/managers/:manager_id/departments", h.Admin.ManagerScope.ReplaceManagerDepartments)
 	}
 }
 

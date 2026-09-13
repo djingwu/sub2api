@@ -213,6 +213,7 @@ export default {
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
     managerTeam: 'Department Team',
+    managerScopes: 'Manager Scopes',
   },
 
   // Manager
