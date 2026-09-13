@@ -479,6 +479,7 @@ export default {
       statusFilter: '状态筛选',
       allStatuses: '全部状态',
       admin: '管理员',
+      manager: '部门经理',
       user: '用户',
       disabled: '禁用',
       email: '邮箱',

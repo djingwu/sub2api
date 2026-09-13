@@ -479,6 +479,7 @@ export default {
       statusFilter: 'Status Filter',
       allStatuses: 'All Status',
       admin: 'Admin',
+      manager: 'Department Manager',
       user: 'User',
       disabled: 'Disabled',
       email: 'Email',
