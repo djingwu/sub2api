@@ -228,13 +228,20 @@ func TestBuildDingTalkUpstreamClaims_CrossOrgEmptyCorpUserID(t *testing.T) {
 	require.Equal(t, "", claims["username"])
 }
 
-// TestBuildDingTalkUpstreamClaims_PrimaryDeptIDInClaims 验证首个 dept_id 被存入 claims。
+// TestBuildDingTalkUpstreamClaims_PrimaryDeptIDInClaims 验证首个真实部门 ID 被存入 claims。
 func TestBuildDingTalkUpstreamClaims_PrimaryDeptIDInClaims(t *testing.T) {
 	staff := &DingTalkStaffInfo{UserID: "u1", Name: "张三", Email: "a@b.com", DeptIDs: []int64{42, 99}}
 	claims := buildDingTalkUpstreamClaims(staff, "uid1", "corpX")
 
-	// 只取首个 dept_id
+	// 只取首个真实部门 ID。
 	require.Equal(t, int64(42), claims["primary_dept_id"], "primary_dept_id should be the first dept_id")
+}
+
+func TestBuildDingTalkUpstreamClaims_PrimaryDeptIDSkipsRoot(t *testing.T) {
+	staff := &DingTalkStaffInfo{DeptIDs: []int64{1, 42}}
+	claims := buildDingTalkUpstreamClaims(staff, "uid-root-child", "corpX")
+
+	require.Equal(t, int64(42), claims["primary_dept_id"], "root department should not hide a real child department")
 }
 
 // TestBuildDingTalkUpstreamClaims_NoDeptIDs 验证无部门时 primary_dept_id=0。

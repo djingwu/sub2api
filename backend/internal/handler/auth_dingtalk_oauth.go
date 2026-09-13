@@ -736,10 +736,7 @@ func dingTalkBindLoginCompletionResponse(redirectTo string) map[string]any {
 }
 
 func buildDingTalkUpstreamClaims(staff *DingTalkStaffInfo, unionID, corpID string) map[string]any {
-	primaryDeptID := int64(0)
-	if len(staff.DeptIDs) > 0 {
-		primaryDeptID = staff.DeptIDs[0]
-	}
+	primaryDeptID := primaryDingTalkDeptID(staff.DeptIDs)
 	return map[string]any{
 		"email":           staff.Email,
 		"username":        staff.Name,
@@ -750,6 +747,22 @@ func buildDingTalkUpstreamClaims(staff *DingTalkStaffInfo, unionID, corpID strin
 		"corp_id":         corpID,
 		"primary_dept_id": primaryDeptID, // 首个部门 ID，用于 internal_only 同步路径
 	}
+}
+
+func primaryDingTalkDeptID(deptIDs []int64) int64 {
+	if len(deptIDs) == 0 {
+		return 0
+	}
+
+	// Prefer a real department over DingTalk's root organization (ID 1),
+	// while preserving the first value when the list only contains roots.
+	primary := deptIDs[0]
+	for _, deptID := range deptIDs {
+		if deptID > 1 {
+			return deptID
+		}
+	}
+	return primary
 }
 
 func checkDingTalkCorpAllowed(cfg config.DingTalkConnectConfig, corpID string) bool {
@@ -1049,12 +1062,14 @@ func (h *AuthHandler) syncDingTalkIdentity(ctx context.Context, cfg config.DingT
 	slog.Info("dingtalk sync: staff snapshot",
 		"name", staff.Name, "email", staff.Email, "dept_ids", staff.DeptIDs,
 	)
+	// Manager authorization data is independent from optional user attributes.
+	// Keep the local department snapshot current even when all attribute sync
+	// switches are disabled or the attribute service is unavailable.
+	primaryDeptID := primaryDingTalkDeptID(staff.DeptIDs)
+	h.syncManagerScopeData(ctx, client, userID, primaryDeptID)
+
 	if !cfg.SyncCorpEmail && !cfg.SyncDisplayName && !cfg.SyncDept {
-		slog.Info("dingtalk sync: skip, all flags disabled")
-		return
-	}
-	if h.userAttributeService == nil {
-		slog.Warn("dingtalk sync: userAttributeService not available, skipping")
+		slog.Info("dingtalk sync: skip, all attribute flags disabled")
 		return
 	}
 
@@ -1075,6 +1090,10 @@ func (h *AuthHandler) syncDingTalkIdentity(ctx context.Context, cfg config.DingT
 			}
 		}
 	}
+	if h.userAttributeService == nil {
+		slog.Warn("dingtalk sync: userAttributeService not available, skipping attribute sync")
+		return
+	}
 
 	// 属性同步（目标 attr key 从 cfg 读取，默认值由 GetDingTalkConnectOAuthConfig 保证非空）
 	type syncField struct {
@@ -1089,22 +1108,8 @@ func (h *AuthHandler) syncDingTalkIdentity(ctx context.Context, cfg config.DingT
 	if cfg.SyncCorpEmail && strings.TrimSpace(staff.Email) != "" {
 		fields = append(fields, syncField{cfg.SyncCorpEmailAttrKey, strings.TrimSpace(staff.Email)})
 	}
-	if cfg.SyncDept && len(staff.DeptIDs) > 0 {
-		// 跳过根部门 ID=1，找第一个真实子部门；都是根则保留 1（最终写入空字符串覆盖旧值）。
-		primaryDeptID := int64(0)
-		for _, id := range staff.DeptIDs {
-			if id > 1 {
-				primaryDeptID = id
-				break
-			}
-		}
-		if primaryDeptID == 0 {
-			primaryDeptID = staff.DeptIDs[0]
-		}
+	if cfg.SyncDept && primaryDeptID > 0 {
 		slog.Info("dingtalk sync: pick primary dept", "user_id", userID, "all_dept_ids", staff.DeptIDs, "primary", primaryDeptID)
-		// 经理范围数据：持久化用户主部门快照 + 部门目录（含父级链），
-		// 供后端按 dept_id 做权限判断。失败仅记日志，不阻塞登录同步。
-		h.syncManagerScopeData(ctx, client, userID, primaryDeptID)
 		// 部门专属分组绑定：解析直属部门（叶子）向上的部门链，按链逐个匹配
 		// 映射表（settings.dingtalk_dept_group_map）。叶子命中 → 绑该部门；
 		// 叶子未命中向上找父部门，第一个命中即绑定目标；全链未命中 → 不分配。
@@ -1305,13 +1310,13 @@ func (h *AuthHandler) resolveDingTalkDeptChain(ctx context.Context, client *Ding
 //
 // 依赖 managerService 注入；缺失或失败仅记日志，不影响登录。
 func (h *AuthHandler) syncManagerScopeData(ctx context.Context, client *DingTalkClient, userID, primaryDeptID int64) {
-	if h.managerService == nil || primaryDeptID <= 0 {
+	if h.managerService == nil || userID <= 0 {
 		return
 	}
 	if err := h.managerService.SetUserPrimaryDept(ctx, userID, primaryDeptID); err != nil {
 		slog.Warn("dingtalk sync: failed to persist primary dept", "user_id", userID, "dept_id", primaryDeptID, "err", err)
 	}
-	if client == nil {
+	if primaryDeptID <= 0 || client == nil {
 		return
 	}
 	chain, err := h.resolveDingTalkDeptChain(ctx, client, primaryDeptID)
