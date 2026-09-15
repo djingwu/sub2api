@@ -915,7 +915,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededReturns429(t 
 	require.Contains(t, resp.Error.Message, "daily usage limit exceeded")
 }
 
-func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededFallsBackToBalance(t *testing.T) {
+func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededRejectsWithoutBalanceFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	limit := 1.0
@@ -983,8 +983,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededFallsBackToBa
 	r := gin.New()
 	r.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, &config.Config{RunMode: config.RunModeStandard}))
 	r.GET("/v1beta/test", func(c *gin.Context) {
-		exhausted, _ := c.Request.Context().Value(ctxkey.SubscriptionQuotaExhausted).(bool)
-		c.JSON(200, gin.H{"ok": true, "quota_exhausted": exhausted})
+		c.JSON(200, gin.H{"ok": true})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
@@ -992,8 +991,9 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededFallsBackToBa
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code, "订阅额度用尽但余额充足时应放行并回退余额计费")
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, true, body["quota_exhausted"], "回退余额计费请求应带 SubscriptionQuotaExhausted 标记")
+	require.Equal(t, http.StatusTooManyRequests, rec.Code, "订阅额度超限应直接拒绝，不回退余额计费")
+	var resp googleErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, http.StatusTooManyRequests, resp.Error.Code)
+	require.Equal(t, "RESOURCE_EXHAUSTED", resp.Error.Status)
 }

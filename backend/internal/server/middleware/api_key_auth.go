@@ -247,21 +247,15 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					_, validateErr = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 				}
 				if validateErr != nil {
-					// 订阅额度用尽（日/周/月超限）且订阅本身仍有效：若用户余额充足则回退余额计费放行，
-					// 本请求标记后按余额模式扣费，不再累计订阅额度。
-					if isSubscriptionUsageLimitError(validateErr) && !apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-						ctx = context.WithValue(ctx, ctxkey.SubscriptionQuotaExhausted, true)
-						c.Request = c.Request.WithContext(ctx)
-					} else {
-						code := "SUBSCRIPTION_INVALID"
-						status := 403
-						if isSubscriptionUsageLimitError(validateErr) {
-							code = "USAGE_LIMIT_EXCEEDED"
-							status = 429
-						}
-						AbortWithError(c, status, code, validateErr.Error())
-						return
+					// 订阅额度用尽（日/周/月超限）：订阅与余额解耦，直接拒绝，不回退余额计费。
+					code := "SUBSCRIPTION_INVALID"
+					status := 403
+					if isSubscriptionUsageLimitError(validateErr) {
+						code = "USAGE_LIMIT_EXCEEDED"
+						status = 429
 					}
+					AbortWithError(c, status, code, validateErr.Error())
+					return
 				}
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查

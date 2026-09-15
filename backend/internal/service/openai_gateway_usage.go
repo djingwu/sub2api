@@ -322,10 +322,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	// Determine billing type
-	// 订阅额度用尽且回退余额计费时（SubscriptionQuotaExhaustedFromContext），
-	// 本请求按余额模式处理，不再累计订阅用量。
-	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() &&
-		!SubscriptionQuotaExhaustedFromContext(ctx)
+	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription

@@ -744,10 +744,7 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	// 判断计费模式
 	isSubscriptionMode := group != nil && group.IsSubscriptionType() && subscription != nil
 
-	// 订阅额度用尽且回退余额计费时，本请求按余额模式检查资格。
-	quotaExhausted := SubscriptionQuotaExhaustedFromContext(ctx)
-
-	if isSubscriptionMode && !quotaExhausted {
+	if isSubscriptionMode {
 		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {
 			return err
 		}
@@ -758,7 +755,7 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	}
 
 	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
-	if !isSubscriptionMode || quotaExhausted {
+	if !isSubscriptionMode {
 		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
 			return err
 		}

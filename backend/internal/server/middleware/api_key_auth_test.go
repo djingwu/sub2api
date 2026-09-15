@@ -270,7 +270,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 	})
 }
 
-func TestAPIKeyAuthSubscriptionLimitExceededFallsBackToBalance(t *testing.T) {
+func TestAPIKeyAuthSubscriptionLimitExceededRejectsWithoutBalanceFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	limit := 1.0
@@ -342,8 +342,7 @@ func TestAPIKeyAuthSubscriptionLimitExceededFallsBackToBalance(t *testing.T) {
 	require.NoError(t, r.SetTrustedProxies(nil))
 	r.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))
 	r.GET("/t", func(c *gin.Context) {
-		exhausted, _ := c.Request.Context().Value(ctxkey.SubscriptionQuotaExhausted).(bool)
-		c.JSON(http.StatusOK, gin.H{"ok": true, "quota_exhausted": exhausted})
+		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
 	w := httptest.NewRecorder()
@@ -351,10 +350,8 @@ func TestAPIKeyAuthSubscriptionLimitExceededFallsBackToBalance(t *testing.T) {
 	req.Header.Set("x-api-key", apiKey.Key)
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "订阅额度用尽但余额充足时应放行并回退余额计费")
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Equal(t, true, body["quota_exhausted"], "回退余额计费请求应带 SubscriptionQuotaExhausted 标记")
+	require.Equal(t, http.StatusTooManyRequests, w.Code, "订阅额度超限应直接拒绝，不回退余额计费")
+	require.Contains(t, w.Body.String(), "USAGE_LIMIT_EXCEEDED")
 }
 
 func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
@@ -1878,4 +1875,12 @@ func (r *stubUserSubscriptionRepo) IncrementUsage(ctx context.Context, id int64,
 
 func (r *stubUserSubscriptionRepo) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	return 0, errors.New("not implemented")
+}
+
+func (r *stubUserSubscriptionRepo) ListDueAutoRenew(ctx context.Context, before time.Time, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
+func (r *stubUserSubscriptionRepo) UpdateAutoRenew(ctx context.Context, subscriptionID int64, enabled bool) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
 }
