@@ -84,35 +84,26 @@ func (r *managerScopeRepository) ListDepartments(ctx context.Context) ([]service
 	return departments, rows.Err()
 }
 
-func (r *managerScopeRepository) ListManagerDepartments(ctx context.Context, managerUserID int64) ([]service.DingTalkDepartment, error) {
+func (r *managerScopeRepository) ListManagerDepartmentIDs(ctx context.Context, managerUserID int64) ([]int64, error) {
 	rows, err := r.sql.QueryContext(ctx, `
-		SELECT d.dept_id, d.parent_id, d.name, d.is_active, d.synced_at, d.created_at, d.updated_at
-		FROM dingtalk_departments AS d
-		JOIN user_manager_departments AS md ON md.dept_id = d.dept_id
-		WHERE md.manager_user_id = $1
-		ORDER BY d.name, d.dept_id`, managerUserID)
+		SELECT dept_id
+		FROM user_manager_departments
+		WHERE manager_user_id = $1
+		ORDER BY dept_id`, managerUserID)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	departments := make([]service.DingTalkDepartment, 0)
+	deptIDs := make([]int64, 0)
 	for rows.Next() {
-		var department service.DingTalkDepartment
-		if err := rows.Scan(
-			&department.DeptID,
-			&department.ParentID,
-			&department.Name,
-			&department.IsActive,
-			&department.SyncedAt,
-			&department.CreatedAt,
-			&department.UpdatedAt,
-		); err != nil {
+		var deptID int64
+		if err := rows.Scan(&deptID); err != nil {
 			return nil, err
 		}
-		departments = append(departments, department)
+		deptIDs = append(deptIDs, deptID)
 	}
-	return departments, rows.Err()
+	return deptIDs, rows.Err()
 }
 
 func (r *managerScopeRepository) ReplaceManagerDepartments(ctx context.Context, managerUserID int64, deptIDs []int64) error {

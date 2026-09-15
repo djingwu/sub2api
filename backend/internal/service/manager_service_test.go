@@ -10,7 +10,7 @@ import (
 
 type stubScopeRepo struct {
 	departments    []DingTalkDepartment
-	managerDepts   []DingTalkDepartment
+	managerDepts   []int64
 	inScope        bool
 	inScopeErr     error
 	upsertCalled   bool
@@ -27,7 +27,7 @@ func (s *stubScopeRepo) ListDepartments(_ context.Context) ([]DingTalkDepartment
 	return s.departments, nil
 }
 
-func (s *stubScopeRepo) ListManagerDepartments(_ context.Context, _ int64) ([]DingTalkDepartment, error) {
+func (s *stubScopeRepo) ListManagerDepartmentIDs(_ context.Context, _ int64) ([]int64, error) {
 	return s.managerDepts, nil
 }
 

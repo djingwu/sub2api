@@ -134,6 +134,69 @@ type GroupStat struct {
 	AccountCost float64 `json:"account_cost"` // 账号成本
 }
 
+// GroupModelStat represents token usage for a single model within a single group.
+// It deliberately carries no cost fields so team-facing responses cannot leak them.
+type GroupModelStat struct {
+	GroupID     int64  `json:"group_id"`
+	GroupName   string `json:"group_name"`
+	Model       string `json:"model"`
+	TotalTokens int64  `json:"total_tokens"`
+}
+
+// GroupUsageBreakdown is the token-only per-department aggregate for the team
+// report. It intentionally contains no cost, user identity, or request-detail
+// fields so nothing sensitive can leak through the response.
+type GroupUsageBreakdown struct {
+	GroupID             int64   `json:"group_id"`
+	GroupName           string  `json:"group_name"`
+	Requests            int64   `json:"requests"`
+	TotalTokens         int64   `json:"total_tokens"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	ModelCount          int64   `json:"model_count"`
+	ActiveUserCount     int64   `json:"active_user_count"`
+	ImageCount          int64   `json:"image_count"`
+	VideoCount          int64   `json:"video_count"`
+	StreamRequests      int64   `json:"stream_requests"`
+	AvgDurationMs       float64 `json:"avg_duration_ms"`
+	AvgFirstTokenMs     float64 `json:"avg_first_token_ms"`
+}
+
+// DepartmentTrendPoint represents aggregate token usage for one time bucket.
+type DepartmentTrendPoint struct {
+	Bucket              string  `json:"bucket"`
+	Requests            int64   `json:"requests"`
+	TotalTokens         int64   `json:"total_tokens"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	StreamRequests      int64   `json:"stream_requests"`
+	ImageCount          int64   `json:"image_count"`
+	VideoCount          int64   `json:"video_count"`
+	AvgDurationMs       float64 `json:"avg_duration_ms"`
+	AvgFirstTokenMs     float64 `json:"avg_first_token_ms"`
+}
+
+// UsageHeatmapPoint is one (weekday, hour) cell of the team activity heatmap.
+// Weekday follows Postgres DOW semantics: 0 = Sunday .. 6 = Saturday. Hour is
+// resolved in the requester's timezone so the map matches their wall clock.
+type UsageHeatmapPoint struct {
+	Weekday     int   `json:"weekday"`
+	Hour        int   `json:"hour"`
+	Requests    int64 `json:"requests"`
+	TotalTokens int64 `json:"total_tokens"`
+}
+
+// ModelTrendPoint represents token usage for one model within one time bucket.
+type ModelTrendPoint struct {
+	Bucket      string `json:"bucket"`
+	Model       string `json:"model"`
+	TotalTokens int64  `json:"total_tokens"`
+}
+
 // UserUsageTrendPoint represents user usage trend data point
 type UserUsageTrendPoint struct {
 	Date       string  `json:"date"`

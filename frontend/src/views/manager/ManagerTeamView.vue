@@ -3,7 +3,7 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
+          <div class="lg:hidden">
             <h1 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('manager.team.title') }}</h1>
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('manager.team.description') }}</p>
           </div>

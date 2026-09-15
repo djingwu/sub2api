@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,37 @@ type userGroupStat struct {
 	ActualCost  float64 `json:"actual_cost"`
 }
 
+// departmentUsageStat is the deliberately narrow public team view. Keep cost
+// fields out of this DTO so they cannot leak through the API response.
+type departmentUsageStat struct {
+	GroupID             int64             `json:"group_id"`
+	GroupName           string            `json:"group_name"`
+	Requests            int64             `json:"requests"`
+	TotalTokens         int64             `json:"total_tokens"`
+	InputTokens         int64             `json:"input_tokens"`
+	OutputTokens        int64             `json:"output_tokens"`
+	CacheCreationTokens int64             `json:"cache_creation_tokens"`
+	CacheReadTokens     int64             `json:"cache_read_tokens"`
+	ModelCount          int64             `json:"model_count"`
+	ActiveUserCount     int64             `json:"active_user_count"`
+	ImageCount          int64             `json:"image_count"`
+	VideoCount          int64             `json:"video_count"`
+	StreamRequests      int64             `json:"stream_requests"`
+	AvgDurationMs       float64           `json:"avg_duration_ms"`
+	AvgFirstTokenMs     float64           `json:"avg_first_token_ms"`
+	TopModels           []departmentModel `json:"top_models"`
+}
+
+// departmentModel mirrors GroupModelStat without any cost information.
+type departmentModel struct {
+	Model       string `json:"model"`
+	TotalTokens int64  `json:"total_tokens"`
+}
+
+// departmentTopModelLimit caps how many models each department row carries. The
+// page shows them on demand, so a small fixed window keeps the payload flat.
+const departmentTopModelLimit = 5
+
 // UsageHandler handles usage-related requests
 type UsageHandler struct {
 	usageService   *service.UsageService
@@ -71,6 +103,11 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
+		return nil, false
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, requireRange)
+	if !ok {
 		return nil, false
 	}
 
@@ -153,6 +190,24 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 		return nil, false
 	}
 
+	parsed.Filters = usagestats.UsageLogFilters{
+		UserID:             subject.UserID,
+		APIKeyID:           apiKeyID,
+		GroupID:            groupID,
+		Model:              strings.TrimSpace(c.Query("model")),
+		ModelFilterSource:  usagestats.ModelSourceRequested,
+		RequestType:        requestType,
+		Stream:             stream,
+		NativeCompactionV2: nativeCompactionV2,
+		BillingType:        billingType,
+		BillingMode:        billingMode,
+		StartTime:          parsed.Filters.StartTime,
+		EndTime:            parsed.Filters.EndTime,
+	}
+	return parsed, true
+}
+
+func (h *UsageHandler) parseUserUsageDateRange(c *gin.Context, requireRange bool) (*userUsageFilters, bool) {
 	userTZ := c.Query("timezone")
 	now := timezone.NowInUserLocation(userTZ)
 	var startTime, endTime time.Time
@@ -205,18 +260,8 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 
 	return &userUsageFilters{
 		Filters: usagestats.UsageLogFilters{
-			UserID:             subject.UserID,
-			APIKeyID:           apiKeyID,
-			GroupID:            groupID,
-			Model:              strings.TrimSpace(c.Query("model")),
-			ModelFilterSource:  usagestats.ModelSourceRequested,
-			RequestType:        requestType,
-			Stream:             stream,
-			NativeCompactionV2: nativeCompactionV2,
-			BillingType:        billingType,
-			BillingMode:        billingMode,
-			StartTime:          startPtr,
-			EndTime:            endPtr,
+			StartTime: startPtr,
+			EndTime:   endPtr,
 		},
 		StartTime: derefTime(startPtr),
 		EndTime:   derefTime(endPtr),
@@ -572,6 +617,151 @@ func (h *UsageHandler) DashboardSnapshotV2(c *gin.Context) {
 	}
 
 	response.Success(c, resp)
+}
+
+// DepartmentUsage returns aggregate token usage for every department visible
+// to authenticated team members. It intentionally does not expose costs,
+// request details, users, or API keys.
+// GET /api/v1/usage/department-usage
+func (h *UsageHandler) DepartmentUsage(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return
+	}
+
+	breakdown, err := h.usageService.GetDepartmentUsageBreakdownWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, parsed.Filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	topModels, err := h.usageService.GetDepartmentGroupModelStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, parsed.Filters, departmentTopModelLimit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	modelsByGroup := make(map[int64][]departmentModel, len(breakdown))
+	for _, model := range topModels {
+		modelsByGroup[model.GroupID] = append(modelsByGroup[model.GroupID], departmentModel{
+			Model:       model.Model,
+			TotalTokens: model.TotalTokens,
+		})
+	}
+
+	departments := make([]departmentUsageStat, 0, len(breakdown))
+	for _, row := range breakdown {
+		models := modelsByGroup[row.GroupID]
+		if models == nil {
+			models = []departmentModel{}
+		}
+		departments = append(departments, departmentUsageStat{
+			GroupID:             row.GroupID,
+			GroupName:           row.GroupName,
+			Requests:            row.Requests,
+			TotalTokens:         row.TotalTokens,
+			InputTokens:         row.InputTokens,
+			OutputTokens:        row.OutputTokens,
+			CacheCreationTokens: row.CacheCreationTokens,
+			CacheReadTokens:     row.CacheReadTokens,
+			ModelCount:          row.ModelCount,
+			ActiveUserCount:     row.ActiveUserCount,
+			ImageCount:          row.ImageCount,
+			VideoCount:          row.VideoCount,
+			StreamRequests:      row.StreamRequests,
+			AvgDurationMs:       row.AvgDurationMs,
+			AvgFirstTokenMs:     row.AvgFirstTokenMs,
+			TopModels:           models,
+		})
+	}
+	// This is a directory-style summary, not a ranking. Keep a stable
+	// alphabetical order so the page does not imply competition between teams.
+	sort.SliceStable(departments, func(i, j int) bool {
+		return strings.ToLower(departments[i].GroupName) < strings.ToLower(departments[j].GroupName)
+	})
+
+	response.Success(c, gin.H{
+		"departments": departments,
+	})
+}
+
+// DepartmentUsageTrend returns the token trend for team-wide reports: one
+// series aggregated across all departments plus a per-model breakdown. Costs are
+// never included.
+// GET /api/v1/usage/department-usage/trend
+func (h *UsageHandler) DepartmentUsageTrend(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return
+	}
+	granularity := c.DefaultQuery("granularity", "day")
+
+	totalTrend, err := h.usageService.GetDepartmentUsageTrendWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, granularity, parsed.Filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	modelTrend, err := h.usageService.GetDepartmentModelTrendWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, granularity, parsed.Filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"granularity": granularity,
+		"total_trend": totalTrend,
+		"model_trend": modelTrend,
+	})
+}
+
+// DepartmentUsageHeatmap returns weekday-by-hour request activity for the team
+// usage report, bucketed in the requester's timezone. Costs are never included.
+// GET /api/v1/usage/department-usage/heatmap
+func (h *UsageHandler) DepartmentUsageHeatmap(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return
+	}
+
+	tz := strings.TrimSpace(c.Query("timezone"))
+	if tz == "" || tz == "Local" {
+		tz = timezone.Name()
+	}
+	if tz == "Local" {
+		// Postgres has no "Local" zone; fall back to UTC when the server
+		// timezone was never configured with an IANA name.
+		tz = "UTC"
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		response.BadRequest(c, "Invalid timezone")
+		return
+	}
+
+	points, err := h.usageService.GetDepartmentUsageHeatmapWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, parsed.Filters, tz)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"timezone": tz,
+		"points":   points,
+	})
 }
 
 func userModelStatsFromUsageStats(stats []usagestats.ModelStat) []userModelStat {

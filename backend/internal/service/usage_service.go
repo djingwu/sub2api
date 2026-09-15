@@ -14,6 +14,9 @@ import (
 
 var (
 	ErrUsageLogNotFound = infraerrors.NotFound("USAGE_LOG_NOT_FOUND", "usage log not found")
+	// ErrDepartmentUsageUnsupported is returned when the configured repository
+	// cannot serve the raw-table team analytics the department report needs.
+	ErrDepartmentUsageUnsupported = infraerrors.InternalServer("DEPARTMENT_USAGE_UNSUPPORTED", "department usage reporting is not supported by this repository")
 )
 
 // CreateUsageLogRequest 创建使用日志请求
@@ -391,6 +394,92 @@ func (s *UsageService) GetGroupStatsWithFilters(ctx context.Context, startTime, 
 		return nil, fmt.Errorf("get group stats with filters: %w", err)
 	}
 	return stats, nil
+}
+
+// GetDepartmentUsageTrendWithFilters returns the token trend aggregated across
+// every department for the team usage report. It reads the raw usage table so
+// the chart and the department table share one definition of usage.
+func (s *UsageService) GetDepartmentUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters) ([]usagestats.DepartmentTrendPoint, error) {
+	type departmentTrendRepo interface {
+		GetUsageTrendRawWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters) ([]usagestats.DepartmentTrendPoint, error)
+	}
+	repo, ok := s.usageRepo.(departmentTrendRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	trend, err := repo.GetUsageTrendRawWithFilters(ctx, startTime, endTime, granularity, filters)
+	if err != nil {
+		return nil, fmt.Errorf("get department usage trend: %w", err)
+	}
+	return trend, nil
+}
+
+// GetDepartmentModelTrendWithFilters returns the token trend split by model for
+// the team usage report.
+func (s *UsageService) GetDepartmentModelTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters) ([]usagestats.ModelTrendPoint, error) {
+	type departmentModelTrendRepo interface {
+		GetModelUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters) ([]usagestats.ModelTrendPoint, error)
+	}
+	repo, ok := s.usageRepo.(departmentModelTrendRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	trend, err := repo.GetModelUsageTrendWithFilters(ctx, startTime, endTime, granularity, filters)
+	if err != nil {
+		return nil, fmt.Errorf("get department model trend: %w", err)
+	}
+	return trend, nil
+}
+
+// GetDepartmentGroupModelStatsWithFilters returns the top models per department
+// for the team usage report.
+func (s *UsageService) GetDepartmentGroupModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, perGroupLimit int) ([]usagestats.GroupModelStat, error) {
+	type departmentGroupModelRepo interface {
+		GetGroupModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, perGroupLimit int) ([]usagestats.GroupModelStat, error)
+	}
+	repo, ok := s.usageRepo.(departmentGroupModelRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	stats, err := repo.GetGroupModelStatsWithFilters(ctx, startTime, endTime, filters, perGroupLimit)
+	if err != nil {
+		return nil, fmt.Errorf("get department group model stats: %w", err)
+	}
+	return stats, nil
+}
+
+// GetDepartmentUsageBreakdownWithFilters returns the full token-only aggregate
+// for every department in the team usage report.
+func (s *UsageService) GetDepartmentUsageBreakdownWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) ([]usagestats.GroupUsageBreakdown, error) {
+	type departmentBreakdownRepo interface {
+		GetGroupUsageBreakdownWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) ([]usagestats.GroupUsageBreakdown, error)
+	}
+	repo, ok := s.usageRepo.(departmentBreakdownRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	breakdown, err := repo.GetGroupUsageBreakdownWithFilters(ctx, startTime, endTime, filters)
+	if err != nil {
+		return nil, fmt.Errorf("get department usage breakdown: %w", err)
+	}
+	return breakdown, nil
+}
+
+// GetDepartmentUsageHeatmapWithFilters returns the weekday-by-hour activity map
+// for the team usage report, resolved in the requester's timezone.
+func (s *UsageService) GetDepartmentUsageHeatmapWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, timezone string) ([]usagestats.UsageHeatmapPoint, error) {
+	type departmentHeatmapRepo interface {
+		GetUsageHeatmapWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, timezone string) ([]usagestats.UsageHeatmapPoint, error)
+	}
+	repo, ok := s.usageRepo.(departmentHeatmapRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	points, err := repo.GetUsageHeatmapWithFilters(ctx, startTime, endTime, filters, timezone)
+	if err != nil {
+		return nil, fmt.Errorf("get department usage heatmap: %w", err)
+	}
+	return points, nil
 }
 
 // GetAPIKeyModelStats returns per-model usage stats for a specific API Key.

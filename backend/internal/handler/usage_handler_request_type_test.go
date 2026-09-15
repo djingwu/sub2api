@@ -26,6 +26,19 @@ type userUsageRepoCapture struct {
 	stats        *usagestats.UsageStats
 	modelStats   []usagestats.ModelStat
 	groupStats   []usagestats.GroupStat
+
+	departmentTrendFilters    usagestats.UsageLogFilters
+	departmentTopModelFilters usagestats.UsageLogFilters
+	departmentTopModelLimit   int
+	departmentTrend           []usagestats.DepartmentTrendPoint
+	departmentModelTrend      []usagestats.ModelTrendPoint
+	groupModelStats           []usagestats.GroupModelStat
+
+	departmentBreakdown        []usagestats.GroupUsageBreakdown
+	departmentBreakdownFilters usagestats.UsageLogFilters
+	departmentHeatmap          []usagestats.UsageHeatmapPoint
+	departmentHeatmapFilters   usagestats.UsageLogFilters
+	departmentHeatmapTimezone  string
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
@@ -76,6 +89,32 @@ func (s *userUsageRepoCapture) GetGroupStatsWithFilters(ctx context.Context, sta
 		BillingType: billingType,
 	}
 	return s.groupStats, nil
+}
+
+func (s *userUsageRepoCapture) GetUsageTrendRawWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters) ([]usagestats.DepartmentTrendPoint, error) {
+	s.departmentTrendFilters = filters
+	return s.departmentTrend, nil
+}
+
+func (s *userUsageRepoCapture) GetModelUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters) ([]usagestats.ModelTrendPoint, error) {
+	return s.departmentModelTrend, nil
+}
+
+func (s *userUsageRepoCapture) GetGroupModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, perGroupLimit int) ([]usagestats.GroupModelStat, error) {
+	s.departmentTopModelFilters = filters
+	s.departmentTopModelLimit = perGroupLimit
+	return s.groupModelStats, nil
+}
+
+func (s *userUsageRepoCapture) GetGroupUsageBreakdownWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) ([]usagestats.GroupUsageBreakdown, error) {
+	s.departmentBreakdownFilters = filters
+	return s.departmentBreakdown, nil
+}
+
+func (s *userUsageRepoCapture) GetUsageHeatmapWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, timezone string) ([]usagestats.UsageHeatmapPoint, error) {
+	s.departmentHeatmapFilters = filters
+	s.departmentHeatmapTimezone = timezone
+	return s.departmentHeatmap, nil
 }
 
 func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {

@@ -53,6 +53,9 @@ type APIKeyAuthUserSnapshot struct {
 	// UserGroupRPMOverride 该 API Key 对应的 (user, group) 专属 RPM 覆盖值。
 	// nil = 无 override（回退到 group/user 级）；0 = 不限流；>0 = 专属上限。
 	UserGroupRPMOverride *int `json:"user_group_rpm_override,omitempty"`
+
+	// CostExempt 成本豁免：为 true 时该用户用量落库金额归零（账面不显示消耗），但照常扣费。
+	CostExempt bool `json:"cost_exempt"`
 }
 
 // APIKeyAuthGroupSnapshot 分组快照

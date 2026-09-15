@@ -118,6 +118,75 @@ export interface UsageDashboardSnapshotV2Response {
   groups?: GroupStat[]
 }
 
+export interface DepartmentUsageModelStat {
+  model: string
+  total_tokens: number
+}
+
+export interface DepartmentUsageStat {
+  group_id: number
+  group_name: string
+  requests: number
+  total_tokens: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  model_count: number
+  active_user_count: number
+  image_count: number
+  video_count: number
+  stream_requests: number
+  avg_duration_ms: number
+  avg_first_token_ms: number
+  top_models: DepartmentUsageModelStat[]
+}
+
+export interface DepartmentUsageResponse {
+  departments: DepartmentUsageStat[]
+}
+
+export type DepartmentTrendGranularity = 'day' | 'week' | 'month'
+
+export interface DepartmentTrendPoint {
+  bucket: string
+  requests: number
+  total_tokens: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  stream_requests: number
+  image_count: number
+  video_count: number
+  avg_duration_ms: number
+  avg_first_token_ms: number
+}
+
+export interface DepartmentModelTrendPoint {
+  bucket: string
+  model: string
+  total_tokens: number
+}
+
+export interface DepartmentUsageTrendResponse {
+  granularity: DepartmentTrendGranularity
+  total_trend: DepartmentTrendPoint[]
+  model_trend: DepartmentModelTrendPoint[]
+}
+
+export interface DepartmentUsageHeatmapPoint {
+  weekday: number
+  hour: number
+  requests: number
+  total_tokens: number
+}
+
+export interface DepartmentUsageHeatmapResponse {
+  timezone: string
+  points: DepartmentUsageHeatmapPoint[]
+}
+
 /**
  * List usage logs with optional filters
  * @param page - Page number (default: 1)
@@ -322,6 +391,50 @@ export async function getDashboardSnapshotV2(
   return data
 }
 
+/**
+ * Get token-only usage totals for all departments visible to team members.
+ * The backend intentionally omits cost and usage-detail fields.
+ */
+export async function getDepartmentUsage(params: {
+  start_date: string
+  end_date: string
+}): Promise<DepartmentUsageResponse> {
+  const { data } = await apiClient.get<DepartmentUsageResponse>('/usage/department-usage', { params })
+  return data
+}
+
+/**
+ * Get the team-wide token trend: an all-department series plus a per-model
+ * breakdown. Costs are never returned by this endpoint.
+ */
+export async function getDepartmentUsageTrend(params: {
+  start_date: string
+  end_date: string
+  granularity: DepartmentTrendGranularity
+}): Promise<DepartmentUsageTrendResponse> {
+  const { data } = await apiClient.get<DepartmentUsageTrendResponse>(
+    '/usage/department-usage/trend',
+    { params }
+  )
+  return data
+}
+
+/**
+ * Get the team-wide weekday-by-hour activity map. Buckets are resolved in the
+ * requested timezone; the backend echoes the timezone it actually used.
+ */
+export async function getDepartmentUsageHeatmap(params: {
+  start_date: string
+  end_date: string
+  timezone?: string
+}): Promise<DepartmentUsageHeatmapResponse> {
+  const { data } = await apiClient.get<DepartmentUsageHeatmapResponse>(
+    '/usage/department-usage/heatmap',
+    { params }
+  )
+  return data
+}
+
 export interface BatchApiKeyUsageStats {
   api_key_id: number
   today_actual_cost: number
@@ -383,6 +496,9 @@ export const usageAPI = {
   getDashboardModels,
   getMyApiKeyDailyUsage,
   getDashboardSnapshotV2,
+  getDepartmentUsage,
+  getDepartmentUsageTrend,
+  getDepartmentUsageHeatmap,
   getDashboardApiKeysUsage,
   // Error requests
   listMyErrorRequests,

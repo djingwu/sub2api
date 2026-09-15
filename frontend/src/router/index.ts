@@ -241,6 +241,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/department-usage',
+    name: 'DepartmentUsage',
+    component: () => import('@/views/user/DepartmentUsageView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Department Usage',
+      titleKey: 'departmentUsage.title',
+      descriptionKey: 'departmentUsage.description'
+    }
+  },
+  {
     path: '/redeem',
     name: 'Redeem',
     component: () => import('@/views/user/RedeemView.vue'),

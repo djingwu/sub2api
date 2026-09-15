@@ -4,7 +4,7 @@
       <template #filters>
         <div class="space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-4">
-            <div>
+            <div class="lg:hidden">
               <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
                 {{ t('admin.managerScopes.title') }}
               </h1>

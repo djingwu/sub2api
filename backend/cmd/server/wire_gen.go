@@ -96,7 +96,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userAttributeValueRepository := repository.NewUserAttributeValueRepository(client)
 	userAttributeService := service.NewUserAttributeService(userAttributeDefinitionRepository, userAttributeValueRepository)
 	managerScopeRepository := repository.NewManagerScopeRepository(db)
-	managerService := service.ProvideManagerService(managerScopeRepository, userRepository, userSubscriptionRepository, subscriptionService)
+	managerService := service.ProvideManagerService(managerScopeRepository, userRepository, userSubscriptionRepository, subscriptionService, settingService)
 	authHandler := handler.ProvideAuthHandler(configConfig, authService, userService, settingService, promoService, redeemService, totpService, userAttributeService, managerService)
 	userHandler := handler.NewUserHandler(userService, authService, emailService, emailCache, affiliateService, serviceUserPlatformQuotaRepository)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)

@@ -1483,10 +1483,16 @@ func (r *userRepository) loadAllowedGroups(ctx context.Context, userIDs []int64)
 // 该列未纳入 ent schema，故用原生 SQL 读取；读取失败（表/列不存在）时安全降级为 false。
 // 成本豁免仅隐藏账面（落库金额归零），不影响对该用户的真实扣费。
 func (r *userRepository) loadCostExempt(ctx context.Context, user *service.User) {
-	if user == nil {
+	loadCostExemptForRow(ctx, r.sql, user)
+}
+
+// loadCostExemptForRow 从 users 表读取 cost_exempt 并写入 user。
+// 供 apiKeyRepository 等非 UserRepository 路径复用（如认证快照加载）。
+func loadCostExemptForRow(ctx context.Context, sqlExec sqlExecutor, user *service.User) {
+	if user == nil || sqlExec == nil {
 		return
 	}
-	rows, err := r.sql.QueryContext(ctx, "SELECT cost_exempt FROM users WHERE id = $1", user.ID)
+	rows, err := sqlExec.QueryContext(ctx, "SELECT cost_exempt FROM users WHERE id = $1", user.ID)
 	if err != nil {
 		return
 	}

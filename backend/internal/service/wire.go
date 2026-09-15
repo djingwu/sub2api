@@ -969,10 +969,11 @@ func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache
 
 // ProvideManagerService 组装部门经理服务并注入订阅额度重置与进度查询实现。
 // 返回接口由 Handler 消费；用 wire.Struct 避免自引用循环，setter 在此完成注入。
-func ProvideManagerService(scopeRepo ManagerScopeRepository, userRepo UserRepository, subRepo UserSubscriptionRepository, subscriptionService *SubscriptionService) *ManagerService {
+func ProvideManagerService(scopeRepo ManagerScopeRepository, userRepo UserRepository, subRepo UserSubscriptionRepository, subscriptionService *SubscriptionService, settingService *SettingService) *ManagerService {
 	svc := NewManagerService(scopeRepo, userRepo, subRepo)
 	svc.SetQuotaResetter(subscriptionService.AdminResetQuota)
 	svc.SetProgressProvider(subscriptionService.GetSubscriptionProgress)
+	svc.SetDeptGroupMapReader(settingService.GetDingTalkDeptGroupMap)
 	return svc
 }
 
