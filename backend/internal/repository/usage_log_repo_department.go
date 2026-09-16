@@ -257,7 +257,7 @@ func (r *usageLogRepository) GetModelUsageTrendWithFilters(ctx context.Context, 
 
 	args := []any{startTime, endTime}
 	query, args = appendDepartmentUsageFilterConditions(query, args, "ul", filters)
-	query += " GROUP BY bucket, model ORDER BY bucket ASC"
+	query += fmt.Sprintf(" GROUP BY bucket, %s ORDER BY bucket ASC", modelExpr)
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
 	if err != nil {
