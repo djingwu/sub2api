@@ -197,6 +197,30 @@ type ModelTrendPoint struct {
 	TotalTokens int64  `json:"total_tokens"`
 }
 
+// UnspecifiedReasoningEffort labels rows whose request never carried a
+// reasoning effort (non-reasoning models, or callers that omitted it).
+const UnspecifiedReasoningEffort = "unspecified"
+
+// ReasoningEffortStat aggregates one reasoning-effort tier. Depending on the
+// query it is scoped by department (GroupID/GroupName), by model, or by time
+// bucket; fields outside the queried dimension stay empty. It carries no cost
+// fields so team-facing responses cannot leak them.
+type ReasoningEffortStat struct {
+	GroupID             int64   `json:"group_id"`
+	GroupName           string  `json:"group_name"`
+	Model               string  `json:"model"`
+	Bucket              string  `json:"bucket"`
+	Effort              string  `json:"effort"`
+	Requests            int64   `json:"requests"`
+	TotalTokens         int64   `json:"total_tokens"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	AvgDurationMs       float64 `json:"avg_duration_ms"`
+	AvgFirstTokenMs     float64 `json:"avg_first_token_ms"`
+}
+
 // UserUsageTrendPoint represents user usage trend data point
 type UserUsageTrendPoint struct {
 	Date       string  `json:"date"`

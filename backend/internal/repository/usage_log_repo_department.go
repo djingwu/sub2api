@@ -80,7 +80,7 @@ func (r *usageLogRepository) GetGroupUsageBreakdownWithFilters(ctx context.Conte
 			COALESCE(AVG(ul.duration_ms) FILTER (WHERE ul.duration_ms IS NOT NULL AND %s), 0)::float8 AS avg_duration_ms,
 			COALESCE(AVG(ul.first_token_ms) FILTER (WHERE ul.first_token_ms IS NOT NULL AND %s), 0)::float8 AS avg_first_token_ms
 		FROM usage_logs ul
-		LEFT JOIN groups g ON g.id = ul.group_id
+		LEFT JOIN groups g ON g.id = ul.group_id AND g.deleted_at IS NULL
 		WHERE ul.created_at >= $1 AND ul.created_at < $2
 	`, departmentTokenSum, modelExpr, usageLogSuccessFilterUL, usageLogSuccessFilterUL)
 
@@ -307,7 +307,7 @@ func (r *usageLogRepository) GetGroupModelStatsWithFilters(ctx context.Context, 
 					ORDER BY %s DESC, %s ASC
 				) AS rn
 			FROM usage_logs ul
-			LEFT JOIN groups g ON g.id = ul.group_id
+			LEFT JOIN groups g ON g.id = ul.group_id AND g.deleted_at IS NULL
 			WHERE ul.created_at >= $1 AND ul.created_at < $2
 	`, modelExpr, tokenSum, tokenSum, modelExpr)
 

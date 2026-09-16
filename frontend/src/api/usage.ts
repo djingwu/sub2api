@@ -187,6 +187,42 @@ export interface DepartmentUsageHeatmapResponse {
   points: DepartmentUsageHeatmapPoint[]
 }
 
+export type DepartmentReasoningEffortSource = 'effective' | 'requested'
+
+export type DepartmentReasoningEffortModelScope = 'gpt' | 'all'
+
+export interface DepartmentReasoningEffortBucket {
+  effort: string
+  requests: number
+  total_tokens: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  avg_duration_ms: number
+  avg_first_token_ms: number
+}
+
+export interface DepartmentReasoningEffortRow {
+  group_id: number
+  group_name: string
+  model: string
+  bucket: string
+  total_requests: number
+  total_tokens: number
+  efforts: DepartmentReasoningEffortBucket[]
+}
+
+export interface DepartmentReasoningEffortResponse {
+  effort_source: DepartmentReasoningEffortSource
+  model_scope: DepartmentReasoningEffortModelScope
+  granularity: DepartmentTrendGranularity
+  efforts: string[]
+  departments: DepartmentReasoningEffortRow[]
+  models: DepartmentReasoningEffortRow[]
+  trend: DepartmentReasoningEffortRow[]
+}
+
 /**
  * List usage logs with optional filters
  * @param page - Page number (default: 1)
@@ -435,6 +471,26 @@ export async function getDepartmentUsageHeatmap(params: {
   return data
 }
 
+/**
+ * Get the GPT reasoning-effort mix per department, per model, and over time.
+ * Passing group_id narrows the report to a single department. Shares are
+ * computed on the client from the returned tier counts.
+ */
+export async function getDepartmentReasoningEffort(params: {
+  start_date: string
+  end_date: string
+  group_id?: number
+  effort_source?: DepartmentReasoningEffortSource
+  model_scope?: DepartmentReasoningEffortModelScope
+  granularity?: DepartmentTrendGranularity
+}): Promise<DepartmentReasoningEffortResponse> {
+  const { data } = await apiClient.get<DepartmentReasoningEffortResponse>(
+    '/usage/department-usage/reasoning',
+    { params }
+  )
+  return data
+}
+
 export interface BatchApiKeyUsageStats {
   api_key_id: number
   today_actual_cost: number
@@ -499,6 +555,7 @@ export const usageAPI = {
   getDepartmentUsage,
   getDepartmentUsageTrend,
   getDepartmentUsageHeatmap,
+  getDepartmentReasoningEffort,
   getDashboardApiKeysUsage,
   // Error requests
   listMyErrorRequests,

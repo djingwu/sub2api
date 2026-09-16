@@ -198,6 +198,131 @@ func TestDepartmentUsageHeatmapRejectsInvalidTimezone(t *testing.T) {
 	require.Empty(t, repo.departmentHeatmapTimezone)
 }
 
+func departmentReasoningRouter(repo *userUsageRepoCapture) *gin.Engine {
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage/reasoning", usageHandler.DepartmentReasoningEffort)
+	return router
+}
+
+func TestDepartmentReasoningEffortDefaultsToGPTAndEffective(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		departmentReasoningGroupStats: []usagestats.ReasoningEffortStat{
+			{GroupID: 2, GroupName: "Platform", Effort: "high", Requests: 2, TotalTokens: 20, AvgDurationMs: 1000, AvgFirstTokenMs: 100},
+			{GroupID: 2, GroupName: "Platform", Effort: "high", Requests: 1, TotalTokens: 10, AvgDurationMs: 400, AvgFirstTokenMs: 40},
+			{GroupID: 2, GroupName: "Platform", Effort: "low", Requests: 1, TotalTokens: 5, AvgDurationMs: 200, AvgFirstTokenMs: 20},
+			{GroupID: 1, GroupName: "Application", Effort: "medium", Requests: 2, TotalTokens: 20, AvgDurationMs: 500, AvgFirstTokenMs: 50},
+			{GroupID: 1, GroupName: "Application", Effort: "", Requests: 1, TotalTokens: 10},
+		},
+		departmentReasoningModelStats: []usagestats.ReasoningEffortStat{
+			{Model: "gpt-5.5", Effort: "high", Requests: 2, TotalTokens: 20},
+			{Model: "gpt-5.6-sol", Effort: "low", Requests: 5, TotalTokens: 50},
+		},
+		departmentReasoningTrendStats: []usagestats.ReasoningEffortStat{
+			{Bucket: "2026-09-02", Effort: "high", Requests: 1, TotalTokens: 10},
+			{Bucket: "2026-09-01", Effort: "low", Requests: 1, TotalTokens: 5},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&user_id=99&api_key_id=3&model=should-be-ignored", nil)
+	rec := httptest.NewRecorder()
+	departmentReasoningRouter(repo).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "cost")
+	require.Equal(t, "effective", repo.departmentReasoningGroupSource)
+	require.Equal(t, "gpt", repo.departmentReasoningGroupModelScope)
+	require.Equal(t, "day", repo.departmentReasoningTrendGranularity)
+	require.Equal(t, int64(0), repo.departmentReasoningGroupFilters.UserID)
+	require.Equal(t, int64(0), repo.departmentReasoningGroupFilters.APIKeyID)
+	require.Equal(t, int64(0), repo.departmentReasoningGroupFilters.GroupID)
+
+	var envelope struct {
+		Data struct {
+			EffortSource string   `json:"effort_source"`
+			ModelScope   string   `json:"model_scope"`
+			Granularity  string   `json:"granularity"`
+			Efforts      []string `json:"efforts"`
+			Departments  []struct {
+				GroupID       int64 `json:"group_id"`
+				TotalRequests int64 `json:"total_requests"`
+				Efforts       []struct {
+					Effort        string  `json:"effort"`
+					Requests      int64   `json:"requests"`
+					AvgDurationMs float64 `json:"avg_duration_ms"`
+				} `json:"efforts"`
+			} `json:"departments"`
+			Models []struct {
+				Model string `json:"model"`
+			} `json:"models"`
+			Trend []struct {
+				Bucket string `json:"bucket"`
+			} `json:"trend"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.Equal(t, "effective", envelope.Data.EffortSource)
+	require.Equal(t, "gpt", envelope.Data.ModelScope)
+	require.Equal(t, []string{"high", "medium", "low", "unspecified"}, envelope.Data.Efforts)
+
+	require.Len(t, envelope.Data.Departments, 2)
+	require.Equal(t, int64(2), envelope.Data.Departments[0].GroupID)
+	require.Equal(t, int64(4), envelope.Data.Departments[0].TotalRequests)
+	require.Len(t, envelope.Data.Departments[0].Efforts, 2)
+	require.Equal(t, "high", envelope.Data.Departments[0].Efforts[0].Effort)
+	require.Equal(t, 800.0, envelope.Data.Departments[0].Efforts[0].AvgDurationMs)
+	require.Equal(t, int64(1), envelope.Data.Departments[1].GroupID)
+	require.Equal(t, "unspecified", envelope.Data.Departments[1].Efforts[1].Effort)
+
+	require.Len(t, envelope.Data.Models, 2)
+	require.Equal(t, "gpt-5.6-sol", envelope.Data.Models[0].Model)
+	require.Len(t, envelope.Data.Trend, 2)
+	require.Equal(t, "2026-09-01", envelope.Data.Trend[0].Bucket)
+	require.Equal(t, "2026-09-02", envelope.Data.Trend[1].Bucket)
+}
+
+func TestDepartmentReasoningEffortScopesToDepartmentAndOverrides(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&group_id=5&effort_source=requested&model_scope=all&granularity=week", nil)
+	rec := httptest.NewRecorder()
+	departmentReasoningRouter(repo).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(5), repo.departmentReasoningGroupFilters.GroupID)
+	require.Equal(t, "requested", repo.departmentReasoningGroupSource)
+	require.Equal(t, "all", repo.departmentReasoningGroupModelScope)
+	require.Equal(t, "week", repo.departmentReasoningTrendGranularity)
+	require.Contains(t, rec.Body.String(), `"effort_source":"requested"`)
+	require.Contains(t, rec.Body.String(), `"model_scope":"all"`)
+	require.Contains(t, rec.Body.String(), `"departments":[]`)
+	require.Contains(t, rec.Body.String(), `"models":[]`)
+	require.Contains(t, rec.Body.String(), `"trend":[]`)
+}
+
+func TestDepartmentReasoningEffortRejectsInvalidOptions(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+
+	cases := []string{
+		"effort_source=weird",
+		"model_scope=weird",
+		"group_id=not-a-number",
+	}
+	for _, query := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&"+query, nil)
+		rec := httptest.NewRecorder()
+		departmentReasoningRouter(repo).ServeHTTP(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code, query)
+	}
+}
+
 func departmentNames(t *testing.T, body []byte) []string {
 	t.Helper()
 	var envelope struct {

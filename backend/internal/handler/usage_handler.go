@@ -76,6 +76,32 @@ type departmentModel struct {
 // page shows them on demand, so a small fixed window keeps the payload flat.
 const departmentTopModelLimit = 5
 
+// departmentReasoningEffortBucket is one reasoning-effort tier inside a
+// department, model, or time bucket. Cost fields stay out of this DTO as well.
+type departmentReasoningEffortBucket struct {
+	Effort              string  `json:"effort"`
+	Requests            int64   `json:"requests"`
+	TotalTokens         int64   `json:"total_tokens"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	AvgDurationMs       float64 `json:"avg_duration_ms"`
+	AvgFirstTokenMs     float64 `json:"avg_first_token_ms"`
+}
+
+// departmentReasoningEffortRow holds the effort breakdown of one department,
+// one model, or one time bucket.
+type departmentReasoningEffortRow struct {
+	GroupID       int64                             `json:"group_id"`
+	GroupName     string                            `json:"group_name"`
+	Model         string                            `json:"model"`
+	Bucket        string                            `json:"bucket"`
+	TotalRequests int64                             `json:"total_requests"`
+	TotalTokens   int64                             `json:"total_tokens"`
+	Efforts       []departmentReasoningEffortBucket `json:"efforts"`
+}
+
 // UsageHandler handles usage-related requests
 type UsageHandler struct {
 	usageService   *service.UsageService
@@ -762,6 +788,195 @@ func (h *UsageHandler) DepartmentUsageHeatmap(c *gin.Context) {
 		"timezone": tz,
 		"points":   points,
 	})
+}
+
+// DepartmentReasoningEffort returns the GPT reasoning-effort mix for the team
+// usage report: per department, per model, and over time. Costs are never
+// included.
+// GET /api/v1/usage/department-usage/reasoning
+func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return
+	}
+
+	effortSource := strings.TrimSpace(c.DefaultQuery("effort_source", "effective"))
+	if effortSource != "effective" && effortSource != "requested" {
+		response.BadRequest(c, "Invalid effort_source, use effective or requested")
+		return
+	}
+	modelScope := strings.TrimSpace(c.DefaultQuery("model_scope", "gpt"))
+	if modelScope != "gpt" && modelScope != "all" {
+		response.BadRequest(c, "Invalid model_scope, use gpt or all")
+		return
+	}
+
+	var groupID int64
+	if groupIDStr := strings.TrimSpace(c.Query("group_id")); groupIDStr != "" {
+		id, err := strconv.ParseInt(groupIDStr, 10, 64)
+		if err != nil || id < 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		groupID = id
+	}
+	// Team-facing report: only the department scope is accepted. User, API key,
+	// and personal model filters are deliberately ignored so a member cannot
+	// drill into another team's usage.
+	filters := usagestats.UsageLogFilters{GroupID: groupID}
+	granularity := c.DefaultQuery("granularity", "day")
+
+	groupStats, err := h.usageService.GetDepartmentReasoningEffortGroupStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	modelStats, err := h.usageService.GetDepartmentReasoningEffortModelStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	trendStats, err := h.usageService.GetDepartmentReasoningEffortTrendWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, granularity, filters, effortSource, modelScope)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"effort_source": effortSource,
+		"model_scope":   modelScope,
+		"granularity":   granularity,
+		"efforts":       departmentReasoningEffortTiers(groupStats),
+		"departments":   buildDepartmentReasoningEffortRows(groupStats, departmentReasoningEffortDimensionGroup),
+		"models":        buildDepartmentReasoningEffortRows(modelStats, departmentReasoningEffortDimensionModel),
+		"trend":         buildDepartmentReasoningEffortRows(trendStats, departmentReasoningEffortDimensionBucket),
+	})
+}
+
+const (
+	departmentReasoningEffortDimensionGroup  = "group"
+	departmentReasoningEffortDimensionModel  = "model"
+	departmentReasoningEffortDimensionBucket = "bucket"
+)
+
+// departmentReasoningEffortTiers lists the effort labels seen in the result,
+// most used first, so every chart can share one legend order.
+func departmentReasoningEffortTiers(stats []usagestats.ReasoningEffortStat) []string {
+	totals := make(map[string]int64, len(stats))
+	for _, stat := range stats {
+		totals[normalizeDepartmentReasoningEffort(stat.Effort)] += stat.Requests
+	}
+	tiers := make([]string, 0, len(totals))
+	for effort := range totals {
+		tiers = append(tiers, effort)
+	}
+	sort.SliceStable(tiers, func(i, j int) bool {
+		if totals[tiers[i]] != totals[tiers[j]] {
+			return totals[tiers[i]] > totals[tiers[j]]
+		}
+		return tiers[i] < tiers[j]
+	})
+	return tiers
+}
+
+func normalizeDepartmentReasoningEffort(effort string) string {
+	if trimmed := strings.TrimSpace(effort); trimmed != "" {
+		return trimmed
+	}
+	return usagestats.UnspecifiedReasoningEffort
+}
+
+// buildDepartmentReasoningEffortRows folds the flat query result into one row
+// per dimension value with its effort tiers. Combined averages are weighted by
+// request count because each input row is already an average.
+func buildDepartmentReasoningEffortRows(stats []usagestats.ReasoningEffortStat, dimension string) []departmentReasoningEffortRow {
+	type entry struct {
+		row      departmentReasoningEffortRow
+		byEffort map[string]*departmentReasoningEffortBucket
+	}
+
+	entries := make(map[string]*entry, len(stats))
+	order := make([]string, 0, len(stats))
+
+	for _, stat := range stats {
+		var key string
+		row := departmentReasoningEffortRow{}
+		switch dimension {
+		case departmentReasoningEffortDimensionGroup:
+			key = strconv.FormatInt(stat.GroupID, 10)
+			row.GroupID = stat.GroupID
+			row.GroupName = stat.GroupName
+		case departmentReasoningEffortDimensionModel:
+			key = stat.Model
+			row.Model = stat.Model
+		default:
+			key = stat.Bucket
+			row.Bucket = stat.Bucket
+		}
+
+		item, ok := entries[key]
+		if !ok {
+			item = &entry{row: row, byEffort: make(map[string]*departmentReasoningEffortBucket)}
+			entries[key] = item
+			order = append(order, key)
+		}
+
+		effort := normalizeDepartmentReasoningEffort(stat.Effort)
+		bucket, ok := item.byEffort[effort]
+		if !ok {
+			bucket = &departmentReasoningEffortBucket{Effort: effort}
+			item.byEffort[effort] = bucket
+		}
+
+		bucket.Requests += stat.Requests
+		bucket.TotalTokens += stat.TotalTokens
+		bucket.InputTokens += stat.InputTokens
+		bucket.OutputTokens += stat.OutputTokens
+		bucket.CacheCreationTokens += stat.CacheCreationTokens
+		bucket.CacheReadTokens += stat.CacheReadTokens
+		bucket.AvgDurationMs += stat.AvgDurationMs * float64(stat.Requests)
+		bucket.AvgFirstTokenMs += stat.AvgFirstTokenMs * float64(stat.Requests)
+		item.row.TotalRequests += stat.Requests
+		item.row.TotalTokens += stat.TotalTokens
+	}
+
+	rows := make([]departmentReasoningEffortRow, 0, len(order))
+	for _, key := range order {
+		item := entries[key]
+		efforts := make([]departmentReasoningEffortBucket, 0, len(item.byEffort))
+		for _, bucket := range item.byEffort {
+			if bucket.Requests > 0 {
+				bucket.AvgDurationMs /= float64(bucket.Requests)
+				bucket.AvgFirstTokenMs /= float64(bucket.Requests)
+			}
+			efforts = append(efforts, *bucket)
+		}
+		sort.SliceStable(efforts, func(i, j int) bool {
+			if efforts[i].Requests != efforts[j].Requests {
+				return efforts[i].Requests > efforts[j].Requests
+			}
+			return efforts[i].Effort < efforts[j].Effort
+		})
+		item.row.Efforts = efforts
+		rows = append(rows, item.row)
+	}
+
+	if dimension == departmentReasoningEffortDimensionBucket {
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Bucket < rows[j].Bucket })
+		return rows
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].TotalRequests != rows[j].TotalRequests {
+			return rows[i].TotalRequests > rows[j].TotalRequests
+		}
+		return strings.ToLower(rows[i].GroupName+rows[i].Model) < strings.ToLower(rows[j].GroupName+rows[j].Model)
+	})
+	return rows
 }
 
 func userModelStatsFromUsageStats(stats []usagestats.ModelStat) []userModelStat {

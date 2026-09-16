@@ -105,6 +105,7 @@ func RegisterUserRoutes(
 			usage.GET("/department-usage", h.Usage.DepartmentUsage)
 			usage.GET("/department-usage/trend", h.Usage.DepartmentUsageTrend)
 			usage.GET("/department-usage/heatmap", h.Usage.DepartmentUsageHeatmap)
+			usage.GET("/department-usage/reasoning", h.Usage.DepartmentReasoningEffort)
 			usage.GET("/:id", h.Usage.GetByID)
 			usage.GET("/stats", h.Usage.Stats)
 			// User dashboard endpoints

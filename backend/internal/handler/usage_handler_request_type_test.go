@@ -39,6 +39,16 @@ type userUsageRepoCapture struct {
 	departmentHeatmap          []usagestats.UsageHeatmapPoint
 	departmentHeatmapFilters   usagestats.UsageLogFilters
 	departmentHeatmapTimezone  string
+
+	departmentReasoningGroupStats       []usagestats.ReasoningEffortStat
+	departmentReasoningGroupFilters     usagestats.UsageLogFilters
+	departmentReasoningGroupSource      string
+	departmentReasoningGroupModelScope  string
+	departmentReasoningModelStats       []usagestats.ReasoningEffortStat
+	departmentReasoningModelFilters     usagestats.UsageLogFilters
+	departmentReasoningTrendStats       []usagestats.ReasoningEffortStat
+	departmentReasoningTrendFilters     usagestats.UsageLogFilters
+	departmentReasoningTrendGranularity string
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
@@ -115,6 +125,24 @@ func (s *userUsageRepoCapture) GetUsageHeatmapWithFilters(ctx context.Context, s
 	s.departmentHeatmapFilters = filters
 	s.departmentHeatmapTimezone = timezone
 	return s.departmentHeatmap, nil
+}
+
+func (s *userUsageRepoCapture) GetReasoningEffortGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+	s.departmentReasoningGroupFilters = filters
+	s.departmentReasoningGroupSource = source
+	s.departmentReasoningGroupModelScope = modelScope
+	return s.departmentReasoningGroupStats, nil
+}
+
+func (s *userUsageRepoCapture) GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+	s.departmentReasoningModelFilters = filters
+	return s.departmentReasoningModelStats, nil
+}
+
+func (s *userUsageRepoCapture) GetReasoningEffortTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+	s.departmentReasoningTrendFilters = filters
+	s.departmentReasoningTrendGranularity = granularity
+	return s.departmentReasoningTrendStats, nil
 }
 
 func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {

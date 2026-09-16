@@ -141,6 +141,15 @@
                         <Icon :name="isExpanded(department.group_id) ? 'chevronDown' : 'chevronRight'" size="sm" />
                       </button>
                       <span>{{ department.group_name || t('departmentUsage.unassigned') }}</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-6 w-6 flex-none items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-500/10 dark:hover:text-primary-400"
+                        :aria-label="t('departmentUsage.reasoningFilterByDepartment')"
+                        :title="t('departmentUsage.reasoningFilterByDepartment')"
+                        @click="focusReasoningDepartment(department.group_id)"
+                      >
+                        <Icon name="chart" size="sm" />
+                      </button>
                     </div>
                   </td>
                   <td class="px-5 py-4 text-right text-sm tabular-nums text-gray-700 dark:text-dark-200">
@@ -312,6 +321,89 @@
           :empty-text="t('departmentUsage.heatmapEmpty')"
         />
       </section>
+
+      <section ref="reasoningSection" class="space-y-5">
+        <div class="card flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.reasoningTitle') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.reasoningDescription') }}</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
+              {{ t('departmentUsage.reasoningScopeLabel') }}
+              <select v-model.number="reasoningGroupID" class="input w-40 py-1 text-xs" @change="loadReasoning">
+                <option :value="0">{{ t('departmentUsage.reasoningGroupAll') }}</option>
+                <option v-for="department in sortedDepartments" :key="department.group_id" :value="department.group_id">
+                  {{ department.group_name || t('departmentUsage.unassigned') }}
+                </option>
+              </select>
+            </label>
+            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
+              <button
+                v-for="option in reasoningSourceOptions"
+                :key="option.value"
+                type="button"
+                class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+                :class="reasoningSource === option.value
+                  ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
+                @click="changeReasoningSource(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
+              <button
+                v-for="option in reasoningModelScopeOptions"
+                :key="option.value"
+                type="button"
+                class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+                :class="reasoningModelScope === option.value
+                  ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
+                @click="changeReasoningModelScope(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p
+          v-if="reasoningSource === 'requested'"
+          class="rounded-xl bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+        >
+          {{ t('departmentUsage.reasoningRequestedNotice') }}
+        </p>
+
+        <DepartmentReasoningEffortChart
+          :title="t('departmentUsage.reasoningDepartmentsTitle')"
+          :rows="reasoningDepartments"
+          :efforts="reasoningEfforts"
+          label-mode="department"
+          :loading="reasoningLoading"
+          :empty-text="t('departmentUsage.reasoningEmpty')"
+        />
+
+        <div class="grid gap-6 lg:grid-cols-2">
+          <DepartmentReasoningEffortChart
+            :title="t('departmentUsage.reasoningModelsTitle')"
+            :rows="reasoningModels"
+            :efforts="reasoningEfforts"
+            label-mode="model"
+            :loading="reasoningLoading"
+            :empty-text="t('departmentUsage.reasoningEmpty')"
+          />
+          <DepartmentReasoningEffortChart
+            :title="t('departmentUsage.reasoningTrendTitle')"
+            :rows="reasoningTrend"
+            :efforts="reasoningEfforts"
+            label-mode="bucket"
+            :loading="reasoningLoading"
+            :empty-text="t('departmentUsage.reasoningEmpty')"
+          />
+        </div>
+      </section>
     </div>
   </AppLayout>
 </template>
@@ -323,12 +415,17 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DepartmentTrendChart from '@/components/charts/DepartmentTrendChart.vue'
 import DepartmentUsageHeatmap from '@/components/charts/DepartmentUsageHeatmap.vue'
+import DepartmentReasoningEffortChart from '@/components/charts/DepartmentReasoningEffortChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
+  getDepartmentReasoningEffort,
   getDepartmentUsage,
   getDepartmentUsageHeatmap,
   getDepartmentUsageTrend,
   type DepartmentModelTrendPoint,
+  type DepartmentReasoningEffortModelScope,
+  type DepartmentReasoningEffortRow,
+  type DepartmentReasoningEffortSource,
   type DepartmentTrendGranularity,
   type DepartmentTrendPoint,
   type DepartmentUsageHeatmapPoint,
@@ -358,6 +455,30 @@ let trendSequence = 0
 const heatmapPoints = ref<DepartmentUsageHeatmapPoint[]>([])
 const heatmapLoading = ref(false)
 let heatmapSequence = 0
+
+// GPT reasoning-effort mix. Shares are derived on the client from the tier
+// request counts, so the same payload serves the department, model, and trend
+// views.
+const reasoningSection = ref<HTMLElement | null>(null)
+const reasoningDepartments = ref<DepartmentReasoningEffortRow[]>([])
+const reasoningModels = ref<DepartmentReasoningEffortRow[]>([])
+const reasoningTrend = ref<DepartmentReasoningEffortRow[]>([])
+const reasoningEfforts = ref<string[]>([])
+const reasoningLoading = ref(false)
+const reasoningGroupID = ref(0)
+const reasoningSource = ref<DepartmentReasoningEffortSource>('effective')
+const reasoningModelScope = ref<DepartmentReasoningEffortModelScope>('gpt')
+let reasoningSequence = 0
+
+const reasoningSourceOptions = computed<Array<{ value: DepartmentReasoningEffortSource; label: string }>>(() => [
+  { value: 'effective', label: t('departmentUsage.reasoningSourceEffective') },
+  { value: 'requested', label: t('departmentUsage.reasoningSourceRequested') }
+])
+
+const reasoningModelScopeOptions = computed<Array<{ value: DepartmentReasoningEffortModelScope; label: string }>>(() => [
+  { value: 'gpt', label: t('departmentUsage.reasoningModelScopeGpt') },
+  { value: 'all', label: t('departmentUsage.reasoningModelScopeAll') }
+])
 
 const granularityOptions = computed<Array<{ value: DepartmentTrendGranularity; label: string }>>(() => [
   { value: 'day', label: t('departmentUsage.granularityDay') },
@@ -635,16 +756,68 @@ async function loadHeatmap() {
   }
 }
 
+async function loadReasoning() {
+  const sequence = ++reasoningSequence
+  reasoningLoading.value = true
+  try {
+    const response = await getDepartmentReasoningEffort({
+      start_date: startDate.value,
+      end_date: endDate.value,
+      group_id: reasoningGroupID.value || undefined,
+      effort_source: reasoningSource.value,
+      model_scope: reasoningModelScope.value,
+      granularity: granularity.value
+    })
+    if (sequence === reasoningSequence) {
+      reasoningDepartments.value = response.departments || []
+      reasoningModels.value = response.models || []
+      reasoningTrend.value = response.trend || []
+      reasoningEfforts.value = response.efforts || []
+    }
+  } catch (error) {
+    if (sequence === reasoningSequence) {
+      reasoningDepartments.value = []
+      reasoningModels.value = []
+      reasoningTrend.value = []
+      reasoningEfforts.value = []
+      appStore.showError(t('departmentUsage.reasoningLoadFailed'))
+      console.error('Failed to load department reasoning effort:', error)
+    }
+  } finally {
+    if (sequence === reasoningSequence) reasoningLoading.value = false
+  }
+}
+
+function focusReasoningDepartment(groupID: number) {
+  reasoningGroupID.value = groupID
+  void loadReasoning()
+  reasoningSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function changeReasoningSource(value: DepartmentReasoningEffortSource) {
+  if (reasoningSource.value === value) return
+  reasoningSource.value = value
+  void loadReasoning()
+}
+
+function changeReasoningModelScope(value: DepartmentReasoningEffortModelScope) {
+  if (reasoningModelScope.value === value) return
+  reasoningModelScope.value = value
+  void loadReasoning()
+}
+
 function loadUsage() {
   void loadDepartments()
   void loadTrend()
   void loadHeatmap()
+  void loadReasoning()
 }
 
 function changeGranularity(value: DepartmentTrendGranularity) {
   if (granularity.value === value) return
   granularity.value = value
   void loadTrend()
+  void loadReasoning()
 }
 
 onMounted(loadUsage)

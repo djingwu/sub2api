@@ -482,6 +482,57 @@ func (s *UsageService) GetDepartmentUsageHeatmapWithFilters(ctx context.Context,
 	return points, nil
 }
 
+// GetDepartmentReasoningEffortGroupStatsWithFilters returns the reasoning-effort
+// mix per department, so the report can show every department or just one.
+func (s *UsageService) GetDepartmentReasoningEffortGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+	type departmentReasoningEffortGroupRepo interface {
+		GetReasoningEffortGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error)
+	}
+	repo, ok := s.usageRepo.(departmentReasoningEffortGroupRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	stats, err := repo.GetReasoningEffortGroupStatsWithFilters(ctx, startTime, endTime, filters, source, modelScope)
+	if err != nil {
+		return nil, fmt.Errorf("get department reasoning effort group stats: %w", err)
+	}
+	return stats, nil
+}
+
+// GetDepartmentReasoningEffortModelStatsWithFilters returns the reasoning-effort
+// mix per model inside the current scope (optionally a single department).
+func (s *UsageService) GetDepartmentReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+	type departmentReasoningEffortModelRepo interface {
+		GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error)
+	}
+	repo, ok := s.usageRepo.(departmentReasoningEffortModelRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	stats, err := repo.GetReasoningEffortModelStatsWithFilters(ctx, startTime, endTime, filters, source, modelScope)
+	if err != nil {
+		return nil, fmt.Errorf("get department reasoning effort model stats: %w", err)
+	}
+	return stats, nil
+}
+
+// GetDepartmentReasoningEffortTrendWithFilters returns the reasoning-effort mix
+// per time bucket for the team usage report.
+func (s *UsageService) GetDepartmentReasoningEffortTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+	type departmentReasoningEffortTrendRepo interface {
+		GetReasoningEffortTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error)
+	}
+	repo, ok := s.usageRepo.(departmentReasoningEffortTrendRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	stats, err := repo.GetReasoningEffortTrendWithFilters(ctx, startTime, endTime, granularity, filters, source, modelScope)
+	if err != nil {
+		return nil, fmt.Errorf("get department reasoning effort trend: %w", err)
+	}
+	return stats, nil
+}
+
 // GetAPIKeyModelStats returns per-model usage stats for a specific API Key.
 func (s *UsageService) GetAPIKeyModelStats(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
 	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, 0, apiKeyID, 0, 0, nil, nil, nil)
