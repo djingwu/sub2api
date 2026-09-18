@@ -9,7 +9,10 @@ export interface ManagerScopeDepartment {
   dept_id: number
   parent_id: number
   name: string
+  group_name: string
+  path: string[]
   is_active: boolean
+  synced: boolean
 }
 
 export interface ManagerScopeManager {
@@ -24,6 +27,11 @@ export interface ManagerScopeManager {
 export async function listDepartments(): Promise<ManagerScopeDepartment[]> {
   const { data } = await apiClient.get<ManagerScopeDepartment[]>('/admin/manager-scopes/departments')
   return data
+}
+
+export async function syncDepartments(): Promise<number> {
+  const { data } = await apiClient.post<{ synced: number }>('/admin/manager-scopes/departments/sync')
+  return data.synced
 }
 
 export async function listManagers(
@@ -61,6 +69,7 @@ export async function updateManagerDepartments(
 
 const managerScopesAPI = {
   listDepartments,
+  syncDepartments,
   listManagers,
   getManagerDepartments,
   updateManagerDepartments

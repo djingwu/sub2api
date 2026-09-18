@@ -305,6 +305,61 @@ func (c *DingTalkClient) GetDeptInfo(ctx context.Context, deptID int64) (*DingTa
 	}, nil
 }
 
+// ListSubDepartments 查询某个部门的直接子部门列表（用于全量部门树同步）。
+// 调用钉钉旧版 OAPI: POST /topapi/v2/department/listsub?access_token=XXX
+func (c *DingTalkClient) ListSubDepartments(ctx context.Context, deptID int64) ([]DingTalkDeptInfo, error) {
+	appToken, err := c.GetAppToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"dept_id": deptID, "language": "zh_CN"}
+	payload, _ := json.Marshal(body)
+	var targetURL string
+	if strings.Contains(c.cfg.UserInfoURL, "/contact/users/me") {
+		targetURL = c.dingTalkOAPIBase() + "/topapi/v2/department/listsub?access_token=" + url.QueryEscape(appToken)
+	} else {
+		targetURL = c.cfg.UserInfoURL // test stub fallback
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseDingTalkErr(raw, resp.StatusCode)
+	}
+	var v struct {
+		Result []struct {
+			DeptID   int64  `json:"dept_id"`
+			Name     string `json:"name"`
+			ParentID int64  `json:"parent_id"`
+		} `json:"result"`
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+	if v.ErrCode != 0 {
+		return nil, parseDingTalkErr(raw, resp.StatusCode)
+	}
+	out := make([]DingTalkDeptInfo, 0, len(v.Result))
+	for _, item := range v.Result {
+		out = append(out, DingTalkDeptInfo{
+			DeptID:   item.DeptID,
+			Name:     item.Name,
+			ParentID: item.ParentID,
+		})
+	}
+	return out, nil
+}
+
 func (c *DingTalkClient) GetStaffInfoByUserId(ctx context.Context, userID string) (*DingTalkStaffInfo, error) {
 	appToken, err := c.GetAppToken(ctx)
 	if err != nil {

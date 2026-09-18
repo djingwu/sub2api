@@ -140,6 +140,7 @@ func registerManagerScopeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	scopes := admin.Group("/manager-scopes")
 	{
 		scopes.GET("/departments", h.Admin.ManagerScope.ListDepartments)
+		scopes.POST("/departments/sync", h.Auth.SyncDingTalkDepartments)
 		scopes.GET("/managers", h.Admin.ManagerScope.ListManagers)
 		scopes.GET("/managers/:manager_id/departments", h.Admin.ManagerScope.ListManagerDepartments)
 		scopes.PUT("/managers/:manager_id/departments", h.Admin.ManagerScope.ReplaceManagerDepartments)

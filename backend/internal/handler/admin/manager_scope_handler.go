@@ -21,10 +21,14 @@ func NewManagerScopeHandler(adminService service.AdminService, managerService *s
 }
 
 type ManagerScopeDepartmentDTO struct {
-	DeptID   int64  `json:"dept_id"`
-	ParentID int64  `json:"parent_id"`
-	Name     string `json:"name"`
-	IsActive bool   `json:"is_active"`
+	DeptID    int64    `json:"dept_id"`
+	ParentID  int64    `json:"parent_id"`
+	Name      string   `json:"name"`
+	GroupName string   `json:"group_name"`
+	Path      []string `json:"path"`
+	IsActive  bool     `json:"is_active"`
+	// Synced 为 false 表示该部门尚未同步到本地目录，Name 可能为空。
+	Synced bool `json:"synced"`
 }
 
 type ManagerScopeManagerDTO struct {
@@ -152,12 +156,15 @@ func parseManagerID(c *gin.Context) (int64, bool) {
 	return managerID, true
 }
 
-func managerScopeDepartmentToDTO(department service.DingTalkDepartment) ManagerScopeDepartmentDTO {
+func managerScopeDepartmentToDTO(department service.ManagerDepartmentOption) ManagerScopeDepartmentDTO {
 	return ManagerScopeDepartmentDTO{
-		DeptID:   department.DeptID,
-		ParentID: department.ParentID,
-		Name:     department.Name,
-		IsActive: department.IsActive,
+		DeptID:    department.DeptID,
+		ParentID:  department.ParentID,
+		Name:      department.Name,
+		GroupName: department.GroupName,
+		Path:      department.Path,
+		IsActive:  department.IsActive,
+		Synced:    department.Synced,
 	}
 }
 

@@ -50,24 +50,51 @@ func (s *ManagerService) SetQuotaResetter(resetter func(ctx context.Context, sub
 	s.quotaResetter = resetter
 }
 
+// ManagerDepartmentOption 是管理员为经理分配范围时的可选部门。
+// 一个订阅分组（settings.dingtalk_dept_group_map 的取值）通常对应多个钉钉部门，
+// 因此用 GroupName 归类展示，用 Path 展示到末级的层级路径。
+type ManagerDepartmentOption struct {
+	DeptID    int64
+	ParentID  int64
+	Name      string
+	GroupName string
+	Path      []string
+	IsActive  bool
+	// Synced 表示该部门已出现在本地钉钉部门目录缓存中（名称/层级可信）。
+	Synced bool
+}
+
 // ListDepartments 返回“订阅分组对应的部门”目录（管理员配置控件使用）：
-// 数据源是设置项 dingtalk_dept_group_map（dept_id → 部门名），只有这些部门
-// 会在钉钉登录时绑定专属订阅分组。名称优先取本地部门目录，缺失时回退到
-// 映射中的部门名（与订阅分组同名）。映射不可用时退化为本地部门目录。
-func (s *ManagerService) ListDepartments(ctx context.Context) ([]DingTalkDepartment, error) {
-	directory, err := s.resolveDepartmentDirectory(ctx)
+// 数据源是设置项 dingtalk_dept_group_map（dept_id → 订阅分组名），只有这些部门
+// 会在钉钉登录时绑定专属订阅分组。名称/层级取本地部门目录缓存，
+// 缓存缺失时 Name 为空、Synced=false，由前端提示“未同步”。
+// 映射不可用时退化为本地部门目录。
+func (s *ManagerService) ListDepartments(ctx context.Context) ([]ManagerDepartmentOption, error) {
+	index, err := s.loadDepartmentIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]DingTalkDepartment, 0, len(directory))
-	for _, department := range directory {
-		out = append(out, department)
+	if s.deptGroupMap == nil {
+		out := make([]ManagerDepartmentOption, 0, len(index))
+		for deptID := range index {
+			out = append(out, buildManagerDepartmentOption(index, deptID, ""))
+		}
+		sortDepartmentOptions(out)
+		return out, nil
 	}
-	sortDepartments(out)
+	mapping, err := s.deptGroupMap(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ManagerDepartmentOption, 0, len(mapping))
+	for deptID, groupName := range mapping {
+		out = append(out, buildManagerDepartmentOption(index, deptID, strings.TrimSpace(groupName)))
+	}
+	sortDepartmentOptions(out)
 	return out, nil
 }
 
-// UpsertDepartment 写入/刷新部门目录记录（钉钉登录同步时调用）。
+// UpsertDepartment 写入/刷新部门目录记录（钉钉登录同步或全量同步时调用）。
 func (s *ManagerService) UpsertDepartment(ctx context.Context, department *DingTalkDepartment) error {
 	return s.scopeRepo.UpsertDepartment(ctx, department)
 }
@@ -93,71 +120,106 @@ func (s *ManagerService) SetDeptGroupMapReader(reader func(ctx context.Context) 
 	s.deptGroupMap = reader
 }
 
-// resolveDepartmentDirectory 组装可选部门目录：
-//   - 有映射读取器时，以映射中的 dept_id 为准（这些部门才对应订阅分组）；
-//   - 否则退化为本地 dingtalk_departments 目录缓存。
-//
-// 名称/父级/停用状态优先取本地目录，本地缺失时使用映射里的部门名。
-func (s *ManagerService) resolveDepartmentDirectory(ctx context.Context) (map[int64]DingTalkDepartment, error) {
+// loadDepartmentIndex 读取本地钉钉部门目录缓存并建立 dept_id → 部门 的索引。
+func (s *ManagerService) loadDepartmentIndex(ctx context.Context) (map[int64]DingTalkDepartment, error) {
 	directory, err := s.scopeRepo.ListDepartments(ctx)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[int64]DingTalkDepartment, len(directory))
+	index := make(map[int64]DingTalkDepartment, len(directory))
 	for _, department := range directory {
-		byID[department.DeptID] = department
+		index[department.DeptID] = department
 	}
-	if s.deptGroupMap == nil {
-		return byID, nil
+	return index, nil
+}
+
+// buildManagerDepartmentOption 组装单个可选部门：名称/父级/停用状态取本地目录，
+// 目录缺失时仅保留 dept_id 与所属订阅分组，Synced=false。
+func buildManagerDepartmentOption(index map[int64]DingTalkDepartment, deptID int64, groupName string) ManagerDepartmentOption {
+	option := ManagerDepartmentOption{
+		DeptID:    deptID,
+		GroupName: groupName,
+		IsActive:  true,
 	}
-	mapping, err := s.deptGroupMap(ctx)
-	if err != nil {
-		return nil, err
+	if department, ok := index[deptID]; ok {
+		option.ParentID = department.ParentID
+		option.Name = strings.TrimSpace(department.Name)
+		option.IsActive = department.IsActive
+		option.Synced = true
 	}
-	out := make(map[int64]DingTalkDepartment, len(mapping))
-	for deptID, name := range mapping {
-		entry := DingTalkDepartment{DeptID: deptID, Name: strings.TrimSpace(name), IsActive: true}
-		if existing, ok := byID[deptID]; ok {
-			entry.ParentID = existing.ParentID
-			if strings.TrimSpace(existing.Name) != "" {
-				entry.Name = existing.Name
-			}
-			entry.IsActive = existing.IsActive
+	option.Path = buildDepartmentPath(index, deptID)
+	return option
+}
+
+// buildDepartmentPath 沿父级链拼出从根到该部门的名称路径（根在前）。
+// 目录缺失或数据成环时提前终止，保证不会死循环。
+func buildDepartmentPath(index map[int64]DingTalkDepartment, deptID int64) []string {
+	names := make([]string, 0, 4)
+	visited := make(map[int64]struct{}, 4)
+	for current := deptID; current > 0; {
+		if _, ok := visited[current]; ok {
+			break
 		}
-		out[deptID] = entry
+		visited[current] = struct{}{}
+		department, ok := index[current]
+		if !ok {
+			break
+		}
+		if name := strings.TrimSpace(department.Name); name != "" {
+			names = append(names, name)
+		}
+		if department.ParentID <= 0 || department.ParentID == current {
+			break
+		}
+		current = department.ParentID
 	}
-	return out, nil
+	for i, j := 0, len(names)-1; i < j; i, j = i+1, j-1 {
+		names[i], names[j] = names[j], names[i]
+	}
+	return names
 }
 
 // ListManagerDepartments 返回经理负责的部门列表。授权只认 dept_id，
 // 因此即使部门未出现在本地目录缓存中也要回显。
-func (s *ManagerService) ListManagerDepartments(ctx context.Context, managerUserID int64) ([]DingTalkDepartment, error) {
+func (s *ManagerService) ListManagerDepartments(ctx context.Context, managerUserID int64) ([]ManagerDepartmentOption, error) {
 	deptIDs, err := s.scopeRepo.ListManagerDepartmentIDs(ctx, managerUserID)
 	if err != nil {
 		return nil, err
 	}
-	directory, err := s.resolveDepartmentDirectory(ctx)
+	index, err := s.loadDepartmentIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]DingTalkDepartment, 0, len(deptIDs))
-	for _, deptID := range deptIDs {
-		entry, ok := directory[deptID]
-		if !ok {
-			entry = DingTalkDepartment{DeptID: deptID, IsActive: true}
+	var mapping map[int64]string
+	if s.deptGroupMap != nil {
+		mapping, err = s.deptGroupMap(ctx)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, entry)
 	}
-	sortDepartments(out)
+	out := make([]ManagerDepartmentOption, 0, len(deptIDs))
+	for _, deptID := range deptIDs {
+		groupName := ""
+		if mapping != nil {
+			groupName = strings.TrimSpace(mapping[deptID])
+		}
+		out = append(out, buildManagerDepartmentOption(index, deptID, groupName))
+	}
+	sortDepartmentOptions(out)
 	return out, nil
 }
 
-func sortDepartments(departments []DingTalkDepartment) {
-	sort.Slice(departments, func(i, j int) bool {
-		if departments[i].Name != departments[j].Name {
-			return departments[i].Name < departments[j].Name
+// sortDepartmentOptions 先按订阅分组名、再按部门名、最后按 dept_id 排序，
+// 便于前端按分组归类展示。
+func sortDepartmentOptions(options []ManagerDepartmentOption) {
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].GroupName != options[j].GroupName {
+			return options[i].GroupName < options[j].GroupName
 		}
-		return departments[i].DeptID < departments[j].DeptID
+		if options[i].Name != options[j].Name {
+			return options[i].Name < options[j].Name
+		}
+		return options[i].DeptID < options[j].DeptID
 	})
 }
 

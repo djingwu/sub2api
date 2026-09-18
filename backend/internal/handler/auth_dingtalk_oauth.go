@@ -1341,3 +1341,103 @@ func (h *AuthHandler) syncManagerScopeData(ctx context.Context, client *DingTalk
 		}
 	}
 }
+
+const (
+	// dingTalkRootDeptID 是钉钉企业根部门固定 ID。
+	dingTalkRootDeptID int64 = 1
+	// dingTalkMaxDeptDepth 是部门树递归深度上限，防止异常数据造成死循环。
+	dingTalkMaxDeptDepth = 32
+)
+
+// SyncDingTalkDepartments 全量拉取钉钉部门树并写入本地目录缓存。
+// 供管理员在「经理部门范围」页面手动触发。需要应用级 access_token，
+// 即 settings 中的 client_id/client_secret 必须是「企业内部应用」凭据
+// （扫码登录应用凭据无法获取应用级 token，会返回 invalidClientIdOrSecret）。
+func (h *AuthHandler) SyncDingTalkDepartments(c *gin.Context) {
+	synced, err := h.syncDingTalkDepartments(c.Request.Context())
+	if err != nil {
+		var apiErr *DingTalkAPIError
+		if errors.As(err, &apiErr) {
+			response.ErrorFrom(c, infraerrors.InternalServer(
+				"DINGTALK_DEPT_SYNC_FAILED",
+				fmt.Sprintf("同步钉钉部门失败[%s] %s", apiErr.Code, apiErr.Message),
+			).WithCause(err))
+			return
+		}
+		response.ErrorFrom(c, infraerrors.InternalServer(
+			"DINGTALK_DEPT_SYNC_FAILED",
+			"同步钉钉部门失败: "+infraerrors.Message(err),
+		).WithCause(err))
+		return
+	}
+	response.Success(c, gin.H{"synced": synced})
+}
+
+func (h *AuthHandler) syncDingTalkDepartments(ctx context.Context) (int, error) {
+	if h == nil || h.managerService == nil {
+		return 0, fmt.Errorf("manager service not available")
+	}
+	cfg, err := h.getDingTalkOAuthConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
+		return 0, fmt.Errorf("dingtalk connect client_id/client_secret not configured")
+	}
+	client := h.dingTalkClient(cfg)
+
+	synced := 0
+	upsert := func(info DingTalkDeptInfo) error {
+		if info.DeptID <= 0 {
+			return nil
+		}
+		if err := h.managerService.UpsertDepartment(ctx, &service.DingTalkDepartment{
+			DeptID:   info.DeptID,
+			ParentID: info.ParentID,
+			Name:     info.Name,
+			IsActive: true,
+			SyncedAt: time.Now(),
+		}); err != nil {
+			return err
+		}
+		synced++
+		return nil
+	}
+
+	// listsub 不返回部门自身，根部门单独取一次。
+	if root, err := client.GetDeptInfo(ctx, dingTalkRootDeptID); err == nil {
+		if err := upsert(*root); err != nil {
+			return synced, err
+		}
+	}
+
+	visited := map[int64]struct{}{dingTalkRootDeptID: {}}
+	var walk func(parentID int64, depth int) error
+	walk = func(parentID int64, depth int) error {
+		if depth > dingTalkMaxDeptDepth {
+			return nil
+		}
+		children, err := client.ListSubDepartments(ctx, parentID)
+		if err != nil {
+			return err
+		}
+		for _, child := range children {
+			if _, seen := visited[child.DeptID]; seen {
+				continue
+			}
+			visited[child.DeptID] = struct{}{}
+			if err := upsert(child); err != nil {
+				return err
+			}
+			if err := walk(child.DeptID, depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(dingTalkRootDeptID, 0); err != nil {
+		return synced, err
+	}
+	slog.Info("dingtalk dept sync: completed", "synced", synced)
+	return synced, nil
+}

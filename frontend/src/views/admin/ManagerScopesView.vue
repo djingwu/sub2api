@@ -12,16 +12,30 @@
                 {{ t('admin.managerScopes.description') }}
               </p>
             </div>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :disabled="loadingManagers || loadingDepartments"
-              :title="t('common.refresh')"
-              @click="refresh"
-            >
-              <Icon name="refresh" size="md" :class="(loadingManagers || loadingDepartments) ? 'animate-spin' : ''" />
-              <span class="hidden sm:inline">{{ t('common.refresh') }}</span>
-            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="syncingDepartments"
+                :title="t('admin.managerScopes.syncDepartments')"
+                @click="syncDepartments"
+              >
+                <Icon name="sync" size="md" :class="syncingDepartments ? 'animate-spin' : ''" />
+                <span class="hidden sm:inline">
+                  {{ syncingDepartments ? t('admin.managerScopes.syncing') : t('admin.managerScopes.syncDepartments') }}
+                </span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="loadingManagers || loadingDepartments"
+                :title="t('common.refresh')"
+                @click="refresh"
+              >
+                <Icon name="refresh" size="md" :class="(loadingManagers || loadingDepartments) ? 'animate-spin' : ''" />
+                <span class="hidden sm:inline">{{ t('common.refresh') }}</span>
+              </button>
+            </div>
           </div>
 
           <div
@@ -171,27 +185,46 @@
           {{ t('admin.managerScopes.noDepartments') }}
         </div>
         <div v-else class="max-h-[min(28rem,60vh)] overflow-y-auto rounded-xl border border-gray-200 dark:border-dark-700">
-          <label
-            v-for="department in departments"
-            :key="department.dept_id"
-            class="flex cursor-pointer items-start gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/50"
-          >
-            <input
-              v-model="selectedDepartmentIds"
-              type="checkbox"
-              :value="department.dept_id"
-              class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
-            />
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ department.name }}</span>
-              <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                #{{ department.dept_id }}
-                <span v-if="!department.is_active" class="ml-2 text-amber-600 dark:text-amber-400">
-                  {{ t('admin.managerScopes.inactive') }}
+          <div v-for="group in departmentGroups" :key="group.name || '__ungrouped__'">
+            <div
+              class="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400"
+            >
+              {{ group.name || t('admin.managerScopes.ungrouped') }}
+              <span class="ml-1 font-normal normal-case text-gray-400">({{ group.departments.length }})</span>
+            </div>
+            <label
+              v-for="department in group.departments"
+              :key="department.dept_id"
+              class="flex cursor-pointer items-start gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/50"
+            >
+              <input
+                v-model="selectedDepartmentIds"
+                type="checkbox"
+                :value="department.dept_id"
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                  {{ department.name || `#${department.dept_id}` }}
+                </span>
+                <span class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  <span v-if="departmentParentPath(department)" class="truncate">
+                    {{ departmentParentPath(department) }}
+                  </span>
+                  <span v-else class="text-gray-400">#{{ department.dept_id }}</span>
+                  <span
+                    v-if="!department.synced"
+                    class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                  >
+                    {{ t('admin.managerScopes.unsynced') }}
+                  </span>
+                  <span v-else-if="!department.is_active" class="text-amber-600 dark:text-amber-400">
+                    {{ t('admin.managerScopes.inactive') }}
+                  </span>
                 </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -243,6 +276,7 @@ const showDepartmentDialog = ref(false)
 const loadingDepartments = ref(false)
 const loadingManagers = ref(false)
 const loadingManagerDepartments = ref(false)
+const syncingDepartments = ref(false)
 const saving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -254,6 +288,25 @@ const managerOptions = computed<SelectOption[]>(() =>
     label: `${manager.username || manager.email} (${manager.email})`
   }))
 )
+
+interface DepartmentGroup {
+  name: string
+  departments: ManagerScopeDepartment[]
+}
+
+const departmentGroups = computed<DepartmentGroup[]>(() => {
+  const groups = new Map<string, DepartmentGroup>()
+  for (const department of departments.value) {
+    const key = department.group_name || ''
+    let group = groups.get(key)
+    if (!group) {
+      group = { name: key, departments: [] }
+      groups.set(key, group)
+    }
+    group.departments.push(department)
+  }
+  return Array.from(groups.values())
+})
 
 function getErrorMessage(error: unknown): string {
   return (error as { message?: string })?.message || t('admin.managerScopes.loadFailed')
@@ -294,6 +347,27 @@ async function refresh() {
   await Promise.all([loadDepartments(), loadManagers()])
   if (selectedManagerId.value) {
     await loadSelectedManagerDepartments()
+  }
+}
+
+async function syncDepartments() {
+  if (syncingDepartments.value) return
+  syncingDepartments.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const synced = await adminAPI.managerScopes.syncDepartments()
+    await loadDepartments()
+    if (selectedManagerId.value) {
+      await loadSelectedManagerDepartments()
+    }
+    const message = t('admin.managerScopes.syncSuccess', { count: synced })
+    successMessage.value = message
+    appStore.showSuccess(message)
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  } finally {
+    syncingDepartments.value = false
   }
 }
 
@@ -363,7 +437,14 @@ function handlePageSizeChange(nextPageSize: number) {
 
 function departmentName(departmentId?: number | null): string | undefined {
   if (!departmentId) return undefined
-  return departments.value.find((department) => department.dept_id === departmentId)?.name
+  const department = departments.value.find((item) => item.dept_id === departmentId)
+  if (!department) return undefined
+  return department.name || `#${department.dept_id}`
+}
+
+function departmentParentPath(department: ManagerScopeDepartment): string {
+  const segments = department.path ?? []
+  return segments.slice(0, Math.max(0, segments.length - 1)).join(' / ')
 }
 
 function statusClass(status: string): string {
