@@ -221,6 +221,45 @@ type ReasoningEffortStat struct {
 	AvgFirstTokenMs     float64 `json:"avg_first_token_ms"`
 }
 
+// ClientSoftwareStat represents team-wide client software (user-agent product)
+// usage. Cost fields are intentionally excluded.
+type ClientSoftwareStat struct {
+	ClientSoftware  string `json:"client_software"`
+	Requests        int64  `json:"requests"`
+	TotalTokens     int64  `json:"total_tokens"`
+	UserCount       int64  `json:"user_count"`
+	DepartmentCount int64  `json:"department_count"`
+}
+
+// DepartmentModelStat represents team-wide token usage for a single model.
+// It deliberately carries no cost fields so team-facing responses cannot leak them.
+type DepartmentModelStat struct {
+	Model       string `json:"model"`
+	Requests    int64  `json:"requests"`
+	TotalTokens int64  `json:"total_tokens"`
+	UserCount   int64  `json:"user_count"`
+}
+
+// DepartmentUsageSummary is the cost-free team-wide headline aggregate for the
+// selected range. ActiveUsers counts distinct users across every department.
+// TotalDepartments is the number of adoption-candidate groups; it is filled by
+// the handler from the group directory, not by the aggregate query.
+type DepartmentUsageSummary struct {
+	TotalRequests     int64 `json:"total_requests"`
+	TotalTokens       int64 `json:"total_tokens"`
+	ActiveDepartments int64 `json:"active_departments"`
+	ActiveUsers       int64 `json:"active_users"`
+	TotalDepartments  int64 `json:"total_departments"`
+}
+
+// UnusedDepartment is an adoption-candidate group (active, non-exclusive) that
+// had no usage in the selected range. It powers adoption coverage on the team
+// usage report and keeps anonymous department codes stable across ranges.
+type UnusedDepartment struct {
+	GroupID   int64  `json:"group_id"`
+	GroupName string `json:"group_name"`
+}
+
 // UserUsageTrendPoint represents user usage trend data point
 type UserUsageTrendPoint struct {
 	Date       string  `json:"date"`

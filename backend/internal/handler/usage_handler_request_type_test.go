@@ -40,6 +40,20 @@ type userUsageRepoCapture struct {
 	departmentHeatmapFilters   usagestats.UsageLogFilters
 	departmentHeatmapTimezone  string
 
+	departmentClientSoftware        []usagestats.ClientSoftwareStat
+	departmentClientSoftwareFilters usagestats.UsageLogFilters
+	departmentClientSoftwareLimit   int
+
+	departmentModelStats        []usagestats.DepartmentModelStat
+	departmentModelStatsFilters usagestats.UsageLogFilters
+	departmentModelStatsLimit   int
+
+	departmentSummary        *usagestats.DepartmentUsageSummary
+	departmentSummaryFilters usagestats.UsageLogFilters
+
+	departmentGroups        []usagestats.UnusedDepartment
+	departmentGroupsFetched bool
+
 	departmentReasoningGroupStats       []usagestats.ReasoningEffortStat
 	departmentReasoningGroupFilters     usagestats.UsageLogFilters
 	departmentReasoningGroupSource      string
@@ -127,6 +141,31 @@ func (s *userUsageRepoCapture) GetUsageHeatmapWithFilters(ctx context.Context, s
 	return s.departmentHeatmap, nil
 }
 
+func (s *userUsageRepoCapture) GetClientSoftwareStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) ([]usagestats.ClientSoftwareStat, error) {
+	s.departmentClientSoftwareFilters = filters
+	s.departmentClientSoftwareLimit = limit
+	return s.departmentClientSoftware, nil
+}
+
+func (s *userUsageRepoCapture) GetDepartmentModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) ([]usagestats.DepartmentModelStat, error) {
+	s.departmentModelStatsFilters = filters
+	s.departmentModelStatsLimit = limit
+	return s.departmentModelStats, nil
+}
+
+func (s *userUsageRepoCapture) GetDepartmentUsageSummaryWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) (*usagestats.DepartmentUsageSummary, error) {
+	s.departmentSummaryFilters = filters
+	if s.departmentSummary != nil {
+		return s.departmentSummary, nil
+	}
+	return &usagestats.DepartmentUsageSummary{}, nil
+}
+
+func (s *userUsageRepoCapture) ListDepartmentGroups(ctx context.Context) ([]usagestats.UnusedDepartment, error) {
+	s.departmentGroupsFetched = true
+	return s.departmentGroups, nil
+}
+
 func (s *userUsageRepoCapture) GetReasoningEffortGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
 	s.departmentReasoningGroupFilters = filters
 	s.departmentReasoningGroupSource = source
@@ -134,7 +173,7 @@ func (s *userUsageRepoCapture) GetReasoningEffortGroupStatsWithFilters(ctx conte
 	return s.departmentReasoningGroupStats, nil
 }
 
-func (s *userUsageRepoCapture) GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+func (s *userUsageRepoCapture) GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string, groupByFamily bool) ([]usagestats.ReasoningEffortStat, error) {
 	s.departmentReasoningModelFilters = filters
 	return s.departmentReasoningModelStats, nil
 }

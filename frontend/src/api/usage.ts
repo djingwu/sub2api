@@ -144,36 +144,47 @@ export interface DepartmentUsageStat {
 
 export interface DepartmentUsageResponse {
   departments: DepartmentUsageStat[]
+  summary: DepartmentUsageSummary
+  unused_departments: UnusedDepartment[]
+}
+
+export interface UnusedDepartment {
+  group_id: number
+  group_name: string
+}
+
+export interface DepartmentUsageSummary {
+  total_requests: number
+  total_tokens: number
+  active_departments: number
+  active_users: number
+  total_departments: number
+}
+
+export interface ClientSoftwareStat {
+  client_software: string
+  requests: number
+  total_tokens: number
+  user_count: number
+  department_count: number
+}
+
+export interface DepartmentClientSoftwareResponse {
+  clients: ClientSoftwareStat[]
+}
+
+export interface DepartmentModelStat {
+  model: string
+  requests: number
+  total_tokens: number
+  user_count: number
+}
+
+export interface DepartmentModelStatsResponse {
+  models: DepartmentModelStat[]
 }
 
 export type DepartmentTrendGranularity = 'day' | 'week' | 'month'
-
-export interface DepartmentTrendPoint {
-  bucket: string
-  requests: number
-  total_tokens: number
-  input_tokens: number
-  output_tokens: number
-  cache_creation_tokens: number
-  cache_read_tokens: number
-  stream_requests: number
-  image_count: number
-  video_count: number
-  avg_duration_ms: number
-  avg_first_token_ms: number
-}
-
-export interface DepartmentModelTrendPoint {
-  bucket: string
-  model: string
-  total_tokens: number
-}
-
-export interface DepartmentUsageTrendResponse {
-  granularity: DepartmentTrendGranularity
-  total_trend: DepartmentTrendPoint[]
-  model_trend: DepartmentModelTrendPoint[]
-}
 
 export interface DepartmentUsageHeatmapPoint {
   weekday: number
@@ -216,6 +227,7 @@ export interface DepartmentReasoningEffortRow {
 export interface DepartmentReasoningEffortResponse {
   effort_source: DepartmentReasoningEffortSource
   model_scope: DepartmentReasoningEffortModelScope
+  model_family: boolean
   granularity: DepartmentTrendGranularity
   efforts: string[]
   departments: DepartmentReasoningEffortRow[]
@@ -440,22 +452,6 @@ export async function getDepartmentUsage(params: {
 }
 
 /**
- * Get the team-wide token trend: an all-department series plus a per-model
- * breakdown. Costs are never returned by this endpoint.
- */
-export async function getDepartmentUsageTrend(params: {
-  start_date: string
-  end_date: string
-  granularity: DepartmentTrendGranularity
-}): Promise<DepartmentUsageTrendResponse> {
-  const { data } = await apiClient.get<DepartmentUsageTrendResponse>(
-    '/usage/department-usage/trend',
-    { params }
-  )
-  return data
-}
-
-/**
  * Get the team-wide weekday-by-hour activity map. Buckets are resolved in the
  * requested timezone; the backend echoes the timezone it actually used.
  */
@@ -472,6 +468,40 @@ export async function getDepartmentUsageHeatmap(params: {
 }
 
 /**
+ * Get the top client software products across the team, or for a single
+ * department when group_id is set. Client software names are normalized from
+ * the user_agent field by the backend.
+ */
+export async function getDepartmentClientSoftware(params: {
+  start_date: string
+  end_date: string
+  group_id?: number
+  limit?: number
+}): Promise<DepartmentClientSoftwareResponse> {
+  const { data } = await apiClient.get<DepartmentClientSoftwareResponse>(
+    '/usage/department-usage/client-software',
+    { params }
+  )
+  return data
+}
+
+/**
+ * Get the top models across the team for the team usage report. Costs are never
+ * returned by this endpoint.
+ */
+export async function getDepartmentModelStats(params: {
+  start_date: string
+  end_date: string
+  limit?: number
+}): Promise<DepartmentModelStatsResponse> {
+  const { data } = await apiClient.get<DepartmentModelStatsResponse>(
+    '/usage/department-usage/models',
+    { params }
+  )
+  return data
+}
+
+/**
  * Get the GPT reasoning-effort mix per department, per model, and over time.
  * Passing group_id narrows the report to a single department. Shares are
  * computed on the client from the returned tier counts.
@@ -482,6 +512,7 @@ export async function getDepartmentReasoningEffort(params: {
   group_id?: number
   effort_source?: DepartmentReasoningEffortSource
   model_scope?: DepartmentReasoningEffortModelScope
+  model_family?: boolean
   granularity?: DepartmentTrendGranularity
 }): Promise<DepartmentReasoningEffortResponse> {
   const { data } = await apiClient.get<DepartmentReasoningEffortResponse>(
@@ -553,7 +584,6 @@ export const usageAPI = {
   getMyApiKeyDailyUsage,
   getDashboardSnapshotV2,
   getDepartmentUsage,
-  getDepartmentUsageTrend,
   getDepartmentUsageHeatmap,
   getDepartmentReasoningEffort,
   getDashboardApiKeysUsage,

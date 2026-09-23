@@ -340,3 +340,216 @@ func (r *usageLogRepository) GetGroupModelStatsWithFilters(ctx context.Context, 
 	}
 	return results, nil
 }
+
+// departmentClientSoftwareExpr extracts a normalized client software name from
+// the user-agent. The product is the part before the first "/" (or the whole
+// string when no version is present), lowercased, stripped of anything outside
+// [a-z0-9._-], and truncated so odd or oversized user-agents cannot leak host
+// names or other fingerprints into the team report.
+const departmentClientSoftwareExpr = `COALESCE(
+	NULLIF(
+		LEFT(
+			REGEXP_REPLACE(
+				CASE
+					WHEN POSITION('/' IN ul.user_agent) > 0
+					THEN LOWER(SUBSTRING(ul.user_agent FROM 1 FOR POSITION('/' IN ul.user_agent) - 1))
+					ELSE LOWER(COALESCE(BTRIM(ul.user_agent), 'unknown'))
+				END,
+				'[^a-z0-9._-]', '', 'g'
+			),
+			32
+		),
+		''
+	),
+	'unknown'
+)`
+
+// GetClientSoftwareStatsWithFilters returns the top client software products
+// (normalized user-agent product names) across the whole team, ordered by total
+// tokens descending. Cost columns are never selected.
+func (r *usageLogRepository) GetClientSoftwareStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) (results []usagestats.ClientSoftwareStat, err error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			%s AS client_software,
+			COUNT(*) AS requests,
+			%s AS total_tokens,
+			COUNT(DISTINCT ul.user_id) AS user_count,
+			COUNT(DISTINCT COALESCE(ul.group_id, 0)) AS department_count
+		FROM usage_logs ul
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+	`, departmentClientSoftwareExpr, departmentTokenSum)
+
+	args := []any{startTime, endTime}
+	query, args = appendDepartmentUsageFilterConditions(query, args, "ul", filters)
+	query += fmt.Sprintf(`
+		GROUP BY client_software
+		ORDER BY total_tokens DESC, client_software ASC
+		LIMIT $%d
+	`, len(args)+1)
+	args = append(args, limit)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.ClientSoftwareStat, 0)
+	for rows.Next() {
+		var row usagestats.ClientSoftwareStat
+		if err := rows.Scan(&row.ClientSoftware, &row.Requests, &row.TotalTokens, &row.UserCount, &row.DepartmentCount); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// GetDepartmentModelStatsWithFilters returns the top models by token usage
+// across every department. The model dimension uses the requested-model source
+// so the report matches what users actually asked for, and cost columns are
+// never selected.
+func (r *usageLogRepository) GetDepartmentModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) (results []usagestats.DepartmentModelStat, err error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	modelExpr := resolveModelDimensionExpressionWithAlias(usagestats.ModelSourceRequested, "ul")
+
+	query := fmt.Sprintf(`
+		SELECT
+			%s AS model,
+			COUNT(*) AS requests,
+			%s AS total_tokens,
+			COUNT(DISTINCT ul.user_id) AS user_count
+		FROM usage_logs ul
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+	`, modelExpr, departmentTokenSum)
+
+	args := []any{startTime, endTime}
+	query, args = appendDepartmentUsageFilterConditions(query, args, "ul", filters)
+	query += fmt.Sprintf(`
+		GROUP BY model
+		ORDER BY total_tokens DESC, model ASC
+		LIMIT $%d
+	`, len(args)+1)
+	args = append(args, limit)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.DepartmentModelStat, 0)
+	for rows.Next() {
+		var row usagestats.DepartmentModelStat
+		if err := rows.Scan(&row.Model, &row.Requests, &row.TotalTokens, &row.UserCount); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// GetDepartmentUsageSummaryWithFilters returns the cost-free headline totals for
+// the selected range. ActiveUsers is a distinct-user count across all
+// departments, so it never double counts someone active in two teams.
+func (r *usageLogRepository) GetDepartmentUsageSummaryWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) (*usagestats.DepartmentUsageSummary, error) {
+	query := fmt.Sprintf(`
+		SELECT
+			COUNT(*) AS total_requests,
+			%s AS total_tokens,
+			COUNT(DISTINCT COALESCE(ul.group_id, 0)) AS active_departments,
+			COUNT(DISTINCT ul.user_id) AS active_users
+		FROM usage_logs ul
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+	`, departmentTokenSum)
+
+	args := []any{startTime, endTime}
+	query, args = appendDepartmentUsageFilterConditions(query, args, "ul", filters)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	var summary usagestats.DepartmentUsageSummary
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return &summary, nil
+	}
+	if err := rows.Scan(
+		&summary.TotalRequests,
+		&summary.TotalTokens,
+		&summary.ActiveDepartments,
+		&summary.ActiveUsers,
+	); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
+// ListDepartmentGroups returns every adoption-candidate group (active and not
+// exclusive) so the team usage report can show which departments had no usage
+// in the selected range. Deleted and exclusive groups are never reported.
+func (r *usageLogRepository) ListDepartmentGroups(ctx context.Context) (results []usagestats.UnusedDepartment, err error) {
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT id, COALESCE(name, '')
+		FROM groups
+		WHERE deleted_at IS NULL
+		  AND status = 'active'
+		  AND COALESCE(is_exclusive, FALSE) = FALSE
+		ORDER BY name ASC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.UnusedDepartment, 0)
+	for rows.Next() {
+		var group usagestats.UnusedDepartment
+		if err := rows.Scan(&group.GroupID, &group.GroupName); err != nil {
+			return nil, err
+		}
+		results = append(results, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}

@@ -16,13 +16,28 @@ type managerScopeRepository struct {
 	sql sqlExecutor
 }
 
+// managerDeptTreeCTE 递归展开经理负责的部门及其所有子孙部门。
+// 从 user_manager_departments 出发，沿 dingtalk_departments.parent_id 向下遍历。
+// WHERE d.dept_id <> d.parent_id 防止自引用死循环，PostgreSQL 递归上限兜底。
+const managerDeptTreeCTE = `
+WITH RECURSIVE dept_tree AS (
+	SELECT dept_id
+	FROM user_manager_departments
+	WHERE manager_user_id = $1
+	UNION ALL
+	SELECT d.dept_id
+	FROM dingtalk_departments d
+	JOIN dept_tree dt ON d.parent_id = dt.dept_id
+	WHERE d.dept_id <> d.parent_id
+)`
+
 // managerScopeUserWhere 是经理可见成员的统一过滤条件：
-// 用户主部门命中该经理负责的部门，且用户至少有一条未删除的订阅记录。
+// 用户主部门命中该经理负责的部门（含子孙部门），且用户至少有一条未删除的订阅记录。
+// 注意：调用方需先拼接 managerDeptTreeCTE，本片段依赖 dept_tree CTE。
 const managerScopeUserWhere = `
 	FROM users AS u
-	JOIN user_manager_departments AS md ON md.dept_id = u.primary_dept_id
-	WHERE md.manager_user_id = $1
-	  AND u.deleted_at IS NULL
+	JOIN dept_tree dt ON dt.dept_id = u.primary_dept_id
+	WHERE u.deleted_at IS NULL
 	  AND EXISTS (
 		  SELECT 1 FROM user_subscriptions AS us
 		  WHERE us.user_id = u.id AND us.deleted_at IS NULL
@@ -151,13 +166,12 @@ func (r *managerScopeRepository) runInTx(ctx context.Context, fn func(*sql.Tx) e
 }
 
 func (r *managerScopeRepository) IsUserInManagerScope(ctx context.Context, managerUserID, userID int64) (bool, error) {
-	rows, err := r.sql.QueryContext(ctx, `
+	rows, err := r.sql.QueryContext(ctx, managerDeptTreeCTE+`
 		SELECT EXISTS (
 			SELECT 1
 			FROM users AS u
-			JOIN user_manager_departments AS md ON md.dept_id = u.primary_dept_id
-			WHERE md.manager_user_id = $1
-			  AND u.id = $2
+			JOIN dept_tree dt ON dt.dept_id = u.primary_dept_id
+			WHERE u.id = $2
 			  AND u.deleted_at IS NULL
 			  AND EXISTS (
 				  SELECT 1 FROM user_subscriptions AS us
@@ -179,7 +193,8 @@ func (r *managerScopeRepository) IsUserInManagerScope(ctx context.Context, manag
 }
 
 func (r *managerScopeRepository) countManagerUsers(ctx context.Context, managerUserID int64) (int64, error) {
-	rows, err := r.sql.QueryContext(ctx, `SELECT COUNT(DISTINCT u.id) `+managerScopeUserWhere, managerUserID)
+	rows, err := r.sql.QueryContext(ctx, managerDeptTreeCTE+`
+		SELECT COUNT(DISTINCT u.id) `+managerScopeUserWhere, managerUserID)
 	if err != nil {
 		return 0, err
 	}
@@ -208,7 +223,7 @@ func (r *managerScopeRepository) ListManagerUserIDs(ctx context.Context, manager
 		result.Pages = int((total + int64(result.PageSize) - 1) / int64(result.PageSize))
 	}
 
-	rows, err := r.sql.QueryContext(ctx, `
+	rows, err := r.sql.QueryContext(ctx, managerDeptTreeCTE+`
 		SELECT DISTINCT u.id `+managerScopeUserWhere+`
 		ORDER BY u.id DESC
 		LIMIT $2 OFFSET $3`, managerUserID, result.PageSize, params.Offset())

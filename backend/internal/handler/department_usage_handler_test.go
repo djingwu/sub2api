@@ -340,3 +340,233 @@ func departmentNames(t *testing.T, body []byte) []string {
 	}
 	return names
 }
+
+func TestDepartmentUsageIncludesSummaryWithoutCosts(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		departmentBreakdown: []usagestats.GroupUsageBreakdown{
+			{GroupID: 1, GroupName: "Application", Requests: 1, TotalTokens: 10},
+		},
+		departmentSummary: &usagestats.DepartmentUsageSummary{
+			TotalRequests:     7,
+			TotalTokens:       70,
+			ActiveDepartments: 3,
+			ActiveUsers:       5,
+		},
+	}
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage", usageHandler.DepartmentUsage)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage?start_date=2026-09-01&end_date=2026-09-07", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "cost")
+	require.Equal(t, int64(0), repo.departmentSummaryFilters.UserID)
+	require.Equal(t, int64(0), repo.departmentSummaryFilters.GroupID)
+
+	var envelope struct {
+		Data struct {
+			Summary struct {
+				TotalRequests     int64 `json:"total_requests"`
+				TotalTokens       int64 `json:"total_tokens"`
+				ActiveDepartments int64 `json:"active_departments"`
+				ActiveUsers       int64 `json:"active_users"`
+			} `json:"summary"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.Equal(t, int64(7), envelope.Data.Summary.TotalRequests)
+	require.Equal(t, int64(70), envelope.Data.Summary.TotalTokens)
+	require.Equal(t, int64(3), envelope.Data.Summary.ActiveDepartments)
+	require.Equal(t, int64(5), envelope.Data.Summary.ActiveUsers)
+}
+
+func TestDepartmentClientSoftwareScopesToGroupAndOmitsCosts(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		departmentClientSoftware: []usagestats.ClientSoftwareStat{
+			{ClientSoftware: "claude-cli", Requests: 12, TotalTokens: 120, UserCount: 4, DepartmentCount: 2},
+			{ClientSoftware: "codex_cli_rs", Requests: 5, TotalTokens: 50, UserCount: 2, DepartmentCount: 1},
+		},
+	}
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage/client-software", usageHandler.DepartmentClientSoftware)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/client-software?start_date=2026-09-01&end_date=2026-09-07&user_id=99&api_key_id=3&group_id=5&limit=3", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "cost")
+	require.Equal(t, int64(0), repo.departmentClientSoftwareFilters.UserID)
+	require.Equal(t, int64(0), repo.departmentClientSoftwareFilters.APIKeyID)
+	require.Equal(t, int64(5), repo.departmentClientSoftwareFilters.GroupID)
+	require.Equal(t, 3, repo.departmentClientSoftwareLimit)
+
+	var envelope struct {
+		Data struct {
+			Clients []struct {
+				ClientSoftware  string `json:"client_software"`
+				Requests        int64  `json:"requests"`
+				TotalTokens     int64  `json:"total_tokens"`
+				UserCount       int64  `json:"user_count"`
+				DepartmentCount int64  `json:"department_count"`
+			} `json:"clients"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.Len(t, envelope.Data.Clients, 2)
+	require.Equal(t, "claude-cli", envelope.Data.Clients[0].ClientSoftware)
+	require.Equal(t, int64(4), envelope.Data.Clients[0].UserCount)
+	require.Equal(t, int64(2), envelope.Data.Clients[0].DepartmentCount)
+}
+
+func TestDepartmentClientSoftwareRejectsInvalidGroupID(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage/client-software", usageHandler.DepartmentClientSoftware)
+
+	for _, query := range []string{"group_id=not-a-number", "group_id=-1"} {
+		req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/client-software?start_date=2026-09-01&end_date=2026-09-07&"+query, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code, query)
+	}
+}
+
+func TestDepartmentUsageReportsUnusedDepartmentsWithoutCosts(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		departmentBreakdown: []usagestats.GroupUsageBreakdown{
+			{GroupID: 1, GroupName: "Application", Requests: 1, TotalTokens: 10},
+		},
+		departmentGroups: []usagestats.UnusedDepartment{
+			{GroupID: 1, GroupName: "Application"},
+			{GroupID: 2, GroupName: "Platform"},
+			{GroupID: 3, GroupName: "Research"},
+		},
+	}
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage", usageHandler.DepartmentUsage)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage?start_date=2026-09-01&end_date=2026-09-07", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "cost")
+	require.True(t, repo.departmentGroupsFetched)
+
+	var envelope struct {
+		Data struct {
+			Summary struct {
+				TotalDepartments int64 `json:"total_departments"`
+			} `json:"summary"`
+			UnusedDepartments []struct {
+				GroupID   int64  `json:"group_id"`
+				GroupName string `json:"group_name"`
+			} `json:"unused_departments"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.Equal(t, int64(3), envelope.Data.Summary.TotalDepartments)
+	require.Len(t, envelope.Data.UnusedDepartments, 2)
+	require.Equal(t, int64(2), envelope.Data.UnusedDepartments[0].GroupID)
+	require.Equal(t, "Platform", envelope.Data.UnusedDepartments[0].GroupName)
+	require.Equal(t, "Research", envelope.Data.UnusedDepartments[1].GroupName)
+}
+
+func TestDepartmentModelStatsReturnsModelsWithoutCosts(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		departmentModelStats: []usagestats.DepartmentModelStat{
+			{Model: "claude-sonnet-4-5", Requests: 9, TotalTokens: 90, UserCount: 3},
+			{Model: "gpt-5", Requests: 4, TotalTokens: 40, UserCount: 2},
+		},
+	}
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage/models", usageHandler.DepartmentModelStats)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/models?start_date=2026-09-01&end_date=2026-09-07&user_id=99&model=should-be-ignored&limit=2", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "cost")
+	require.Equal(t, int64(0), repo.departmentModelStatsFilters.UserID)
+	require.Equal(t, int64(0), repo.departmentModelStatsFilters.APIKeyID)
+	require.Equal(t, int64(0), repo.departmentModelStatsFilters.GroupID)
+	require.Equal(t, 2, repo.departmentModelStatsLimit)
+
+	var envelope struct {
+		Data struct {
+			Models []struct {
+				Model       string `json:"model"`
+				Requests    int64  `json:"requests"`
+				TotalTokens int64  `json:"total_tokens"`
+				UserCount   int64  `json:"user_count"`
+			} `json:"models"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.Len(t, envelope.Data.Models, 2)
+	require.Equal(t, "claude-sonnet-4-5", envelope.Data.Models[0].Model)
+	require.Equal(t, int64(90), envelope.Data.Models[0].TotalTokens)
+	require.Equal(t, int64(3), envelope.Data.Models[0].UserCount)
+}
+
+func TestDepartmentUsageRejectsUnauthenticatedAccess(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/usage/department-usage/client-software", usageHandler.DepartmentClientSoftware)
+	router.GET("/usage/department-usage/models", usageHandler.DepartmentModelStats)
+
+	for _, path := range []string{"/usage/department-usage/client-software", "/usage/department-usage/models"} {
+		req := httptest.NewRequest(http.MethodGet, path+"?start_date=2026-09-01&end_date=2026-09-07", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusUnauthorized, rec.Code, path)
+	}
+}

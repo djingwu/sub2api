@@ -710,8 +710,36 @@ func (h *UsageHandler) DepartmentUsage(c *gin.Context) {
 		return strings.ToLower(departments[i].GroupName) < strings.ToLower(departments[j].GroupName)
 	})
 
+	summary, err := h.usageService.GetDepartmentUsageSummary(c.Request.Context(), parsed.StartTime, parsed.EndTime, parsed.Filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	// Coverage is derived from the group directory: active departments over all
+	// adoption-candidate groups. Groups with no usage in the range are listed
+	// separately so the table stays focused on actual usage.
+	groups, err := h.usageService.ListDepartmentGroups(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	usedGroupIDs := make(map[int64]struct{}, len(breakdown))
+	for _, row := range breakdown {
+		usedGroupIDs[row.GroupID] = struct{}{}
+	}
+	unusedDepartments := make([]usagestats.UnusedDepartment, 0, len(groups))
+	for _, group := range groups {
+		if _, used := usedGroupIDs[group.GroupID]; !used {
+			unusedDepartments = append(unusedDepartments, group)
+		}
+	}
+	summary.TotalDepartments = int64(len(groups))
+
 	response.Success(c, gin.H{
-		"departments": departments,
+		"departments":        departments,
+		"summary":            summary,
+		"unused_departments": unusedDepartments,
 	})
 }
 
@@ -790,6 +818,86 @@ func (h *UsageHandler) DepartmentUsageHeatmap(c *gin.Context) {
 	})
 }
 
+// DepartmentClientSoftware returns the top client software products for the
+// team (or a single department when group_id is set). The client software is
+// extracted from the user_agent field. Costs are never included.
+// GET /api/v1/usage/department-usage/client-software
+func (h *UsageHandler) DepartmentClientSoftware(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return
+	}
+
+	var groupID int64
+	if groupIDStr := strings.TrimSpace(c.Query("group_id")); groupIDStr != "" {
+		id, err := strconv.ParseInt(groupIDStr, 10, 64)
+		if err != nil || id < 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		groupID = id
+	}
+	// Team-facing report: only the department scope is accepted. User, API key,
+	// and personal model filters are deliberately ignored so a member cannot
+	// drill into another person's usage.
+	filters := parsed.Filters
+	filters.GroupID = groupID
+
+	limit := 10
+	if limitStr := strings.TrimSpace(c.DefaultQuery("limit", "10")); limitStr != "" {
+		if limitVal, err := strconv.Atoi(limitStr); err == nil && limitVal > 0 && limitVal <= 50 {
+			limit = limitVal
+		}
+	}
+
+	stats, err := h.usageService.GetDepartmentClientSoftwareStats(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"clients": stats,
+	})
+}
+
+// DepartmentModelStats returns the top models across the team for the team
+// usage report. Costs are never included.
+// GET /api/v1/usage/department-usage/models
+func (h *UsageHandler) DepartmentModelStats(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return
+	}
+
+	limit := 10
+	if limitStr := strings.TrimSpace(c.DefaultQuery("limit", "10")); limitStr != "" {
+		if limitVal, err := strconv.Atoi(limitStr); err == nil && limitVal > 0 && limitVal <= 50 {
+			limit = limitVal
+		}
+	}
+
+	stats, err := h.usageService.GetDepartmentModelStats(c.Request.Context(), parsed.StartTime, parsed.EndTime, parsed.Filters, limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"models": stats,
+	})
+}
+
 // DepartmentReasoningEffort returns the GPT reasoning-effort mix for the team
 // usage report: per department, per model, and over time. Costs are never
 // included.
@@ -836,7 +944,8 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	modelStats, err := h.usageService.GetDepartmentReasoningEffortModelStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope)
+	modelFamily := c.DefaultQuery("model_family", "false") == "true"
+	modelStats, err := h.usageService.GetDepartmentReasoningEffortModelStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope, modelFamily)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -850,6 +959,7 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 	response.Success(c, gin.H{
 		"effort_source": effortSource,
 		"model_scope":   modelScope,
+		"model_family":  modelFamily,
 		"granularity":   granularity,
 		"efforts":       departmentReasoningEffortTiers(groupStats),
 		"departments":   buildDepartmentReasoningEffortRows(groupStats, departmentReasoningEffortDimensionGroup),

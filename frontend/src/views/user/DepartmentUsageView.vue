@@ -31,14 +31,24 @@
         <button
           type="button"
           class="btn btn-secondary"
-          :disabled="loading || trendLoading || heatmapLoading"
+          :disabled="anyLoading"
           :title="t('common.refresh')"
           @click="loadUsage"
         >
-          <Icon name="refresh" size="sm" :class="loading || trendLoading || heatmapLoading ? 'animate-spin' : ''" />
+          <Icon name="refresh" size="sm" :class="anyLoading ? 'animate-spin' : ''" />
           <span class="hidden sm:inline">{{ t('common.refresh') }}</span>
         </button>
       </div>
+
+      <DepartmentKpiCards
+        :summary="summary"
+        :previous-summary="previousSummary"
+        :previous-range-label="previousRangeLabel"
+        :coverage-hint="coverageHint"
+        :loading="loading"
+      />
+
+      <DepartmentInsights :insights="insights" :loading="loading || clientSoftwareLoading" />
 
       <section class="card overflow-hidden">
         <div class="flex flex-col gap-2 border-b border-gray-200 px-5 py-5 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -103,25 +113,25 @@
                   </button>
                 </th>
                 <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
+                  <button
+                    type="button"
+                    class="ml-auto inline-flex items-center gap-1 uppercase tracking-wider transition-colors hover:text-gray-700 dark:hover:text-dark-200"
+                    :aria-label="t('departmentUsage.sortByPerCapita')"
+                    :title="t('departmentUsage.sortLabel')"
+                    @click="toggleSort('perCapita')"
+                  >
+                    {{ t('departmentUsage.tokensPerUser') }}
+                    <Icon v-if="sortKey === 'perCapita'" :name="sortDirection === 'asc' ? 'arrowUp' : 'arrowDown'" size="sm" />
+                  </button>
+                </th>
+                <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
                   {{ t('departmentUsage.cacheHitRate') }}
                 </th>
                 <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
                   {{ t('departmentUsage.modelCount') }}
                 </th>
-                <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">
-                  {{ t('departmentUsage.activeUsers') }}
-                </th>
                 <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400 sm:px-6">
-                  <button
-                    type="button"
-                    class="ml-auto inline-flex items-center gap-1 uppercase tracking-wider transition-colors hover:text-gray-700 dark:hover:text-dark-200"
-                    :aria-label="t('departmentUsage.sortByLatency')"
-                    :title="t('departmentUsage.sortLabel')"
-                    @click="toggleSort('duration')"
-                  >
-                    {{ t('departmentUsage.avgLatency') }}
-                    <Icon v-if="sortKey === 'duration'" :name="sortDirection === 'asc' ? 'arrowUp' : 'arrowDown'" size="sm" />
-                  </button>
+                  {{ t('departmentUsage.activeUsers') }}
                 </th>
               </tr>
             </thead>
@@ -141,6 +151,21 @@
                         <Icon :name="isExpanded(department.group_id) ? 'chevronDown' : 'chevronRight'" size="sm" />
                       </button>
                       <span>{{ department.group_name || t('departmentUsage.unassigned') }}</span>
+                      <span
+                        v-if="department.rank"
+                        class="flex-none rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+                        :class="rankChangeClass(department.rank)"
+                        :title="rankChangeTitle(department.rank)"
+                      >
+                        {{ rankChangeText(department.rank) }}
+                      </span>
+                      <Icon
+                        v-if="department.flags.length > 0"
+                        name="exclamationTriangle"
+                        size="sm"
+                        class="flex-none text-amber-500 dark:text-amber-400"
+                        :title="flagTitle(department.flags)"
+                      />
                       <button
                         type="button"
                         class="inline-flex h-6 w-6 flex-none items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-500/10 dark:hover:text-primary-400"
@@ -167,8 +192,35 @@
                     >
                       {{ department.delta.text }}
                     </div>
+                    <div class="mt-1 flex items-center justify-end gap-2">
+                      <div class="h-1 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-800">
+                        <div
+                          class="h-full rounded-full bg-primary-500/60"
+                          :style="{ width: `${department.sharePercent}%` }"
+                        />
+                      </div>
+                      <span
+                        class="text-[11px] tabular-nums text-gray-400 dark:text-dark-500"
+                        :title="teamShareText(department)"
+                      >
+                        {{ department.sharePercent.toFixed(1) }}%
+                      </span>
+                    </div>
                   </td>
                   <td class="px-5 py-4 text-right text-sm tabular-nums text-gray-700 dark:text-dark-200">
+                    <div>{{ perCapitaTokens(department) }}</div>
+                    <div
+                      v-if="department.intensityRatio"
+                      class="mt-0.5 text-[11px] text-gray-400 dark:text-dark-500"
+                      :title="t('departmentUsage.intensityVsTeam', { ratio: department.intensityRatio.toFixed(1) })"
+                    >
+                      ×{{ department.intensityRatio.toFixed(1) }}
+                    </div>
+                  </td>
+                  <td
+                    class="px-5 py-4 text-right text-sm tabular-nums text-gray-700 dark:text-dark-200"
+                    :title="teamCacheHitRate > 0 ? t('departmentUsage.teamAverageCacheRate', { value: `${(teamCacheHitRate * 100).toFixed(1)}%` }) : undefined"
+                  >
                     {{ cacheHitRate(department) }}
                   </td>
                   <td class="px-5 py-4 text-right text-sm tabular-nums text-gray-700 dark:text-dark-200">
@@ -176,14 +228,6 @@
                   </td>
                   <td class="px-5 py-4 text-right text-sm tabular-nums text-gray-700 dark:text-dark-200">
                     {{ formatTokens(department.active_user_count) }}
-                  </td>
-                  <td class="px-5 py-4 text-right text-sm sm:px-6">
-                    <div class="tabular-nums text-gray-700 dark:text-dark-200">
-                      {{ formatLatency(department.avg_duration_ms) }}
-                    </div>
-                    <div class="mt-0.5 text-[11px] tabular-nums text-gray-400 dark:text-dark-500">
-                      {{ t('departmentUsage.firstToken') }} {{ formatLatency(department.avg_first_token_ms) }}
-                    </div>
                   </td>
                 </tr>
                 <tr v-if="isExpanded(department.group_id)" class="bg-gray-50/70 dark:bg-dark-950/40">
@@ -224,7 +268,11 @@
                           </div>
                           <div class="flex items-center justify-between gap-3">
                             <dt class="text-gray-500 dark:text-dark-400">{{ t('departmentUsage.avgLatency') }}</dt>
-                            <dd class="tabular-nums font-medium text-gray-700 dark:text-dark-200">{{ formatLatency(department.avg_duration_ms) }}</dd>
+                            <dd class="tabular-nums font-medium" :class="durationClass(department.avg_duration_ms)">{{ formatLatency(department.avg_duration_ms) }}</dd>
+                          </div>
+                          <div class="flex items-center justify-between gap-3">
+                            <dt class="text-gray-500 dark:text-dark-400">{{ t('departmentUsage.firstToken') }}</dt>
+                            <dd class="tabular-nums font-medium" :class="firstTokenClass(department.avg_first_token_ms)">{{ formatLatency(department.avg_first_token_ms) }}</dd>
                           </div>
                           <div class="flex items-center justify-between gap-3">
                             <dt class="text-gray-500 dark:text-dark-400">{{ t('departmentUsage.images') }}</dt>
@@ -269,48 +317,103 @@
             </tbody>
           </table>
         </div>
+
+        <div
+          v-if="!loading && unusedDepartments.length > 0"
+          class="border-t border-gray-200 px-5 py-4 dark:border-dark-700 sm:px-6"
+        >
+          <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
+            {{ t('departmentUsage.unusedDepartmentsTitle', { count: unusedDepartments.length }) }}
+          </p>
+          <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
+            {{ t('departmentUsage.unusedDepartmentsHint') }}
+          </p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <span
+              v-for="department in unusedDepartments"
+              :key="department.group_id"
+              class="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-800 dark:text-dark-300"
+            >
+              {{ department.group_name || t('departmentUsage.unassigned') }}
+            </span>
+          </div>
+        </div>
       </section>
+
+      <div class="grid gap-6 lg:grid-cols-2">
+        <section class="space-y-5">
+          <div class="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.rankingTitle') }}</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.rankingDescription') }}</p>
+            </div>
+          </div>
+
+          <DepartmentRankingChart
+            :departments="sortedDepartments"
+            :anonymous-labels="anonymousLabels"
+            :loading="loading"
+            :empty-text="t('departmentUsage.noData')"
+          />
+        </section>
+
+        <section class="space-y-5">
+          <div class="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.modelDistributionTitle') }}</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.modelDistributionDescription') }}</p>
+            </div>
+          </div>
+
+          <DepartmentModelDistribution
+            :rows="modelStats"
+            :loading="modelsLoading"
+            :empty-text="t('departmentUsage.modelDistributionEmpty')"
+          />
+        </section>
+      </div>
 
       <section class="space-y-5">
         <div class="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.reportTitle') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.reportDescription') }}</p>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.clientSoftwareTitle') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.clientSoftwareDescription') }}</p>
           </div>
-          <div class="flex items-center gap-3">
-            <span class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('departmentUsage.granularityLabel') }}</span>
-            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
-              <button
-                v-for="option in granularityOptions"
-                :key="option.value"
-                type="button"
-                class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                :class="granularity === option.value
-                  ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
-                @click="changeGranularity(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-          </div>
+          <label class="flex flex-none items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
+            {{ t('departmentUsage.reasoningScopeLabel') }}
+            <select
+              v-model.number="clientSoftwareGroupID"
+              class="input w-40 py-1 text-xs"
+              @change="changeClientSoftwareGroup"
+            >
+              <option :value="0">{{ t('departmentUsage.allDepartments') }}</option>
+              <option v-for="department in sortedDepartments" :key="department.group_id" :value="department.group_id">
+                {{ department.group_name || t('departmentUsage.unassigned') }}
+              </option>
+            </select>
+          </label>
         </div>
 
-        <div class="grid gap-6 lg:grid-cols-2">
-          <DepartmentTrendChart
-            :title="t('departmentUsage.reportTotalTitle')"
-            :labels="trendBuckets"
-            :series="totalTrendSeries"
-            :loading="trendLoading"
-            :empty-text="t('departmentUsage.reportEmpty')"
-          />
-          <DepartmentTrendChart
-            :title="t('departmentUsage.reportModelsTitle')"
-            :labels="trendBuckets"
-            :series="modelTrendSeries"
-            :loading="trendLoading"
-            :empty-text="t('departmentUsage.reportEmpty')"
-          />
+        <DepartmentClientSoftwareTable
+          :clients="clientSoftwareData"
+          :loading="clientSoftwareLoading"
+          :empty-text="t('departmentUsage.clientSoftwareEmpty')"
+        />
+      </section>
+
+      <section class="space-y-3">
+        <div v-if="heatmapSummary && !heatmapLoading" class="flex flex-wrap gap-2">
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-300">
+            <Icon name="clock" size="sm" class="text-primary-500" />
+            {{ t('departmentUsage.peakPeriod', {
+              label: `${weekdayLabel(heatmapSummary.peakWeekday)} ${hourLabel(heatmapSummary.peakHour)}`,
+              requests: formatNumber(heatmapSummary.peakRequests)
+            }) }}
+          </span>
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-300">
+            <Icon name="chart" size="sm" class="text-primary-500" />
+            {{ t('departmentUsage.offHoursShare', { percent: heatmapSummary.offHoursShare.toFixed(1) }) }}
+          </span>
         </div>
 
         <DepartmentUsageHeatmap
@@ -323,115 +426,148 @@
       </section>
 
       <section ref="reasoningSection" class="space-y-5">
-        <div class="card flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
+        <div class="card flex items-center justify-between gap-4 p-6">
           <div>
             <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.reasoningTitle') }}</h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.reasoningDescription') }}</p>
           </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <label class="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
-              {{ t('departmentUsage.reasoningScopeLabel') }}
-              <select v-model.number="reasoningGroupID" class="input w-40 py-1 text-xs" @change="loadReasoning">
-                <option :value="0">{{ t('departmentUsage.reasoningGroupAll') }}</option>
-                <option v-for="department in sortedDepartments" :key="department.group_id" :value="department.group_id">
-                  {{ department.group_name || t('departmentUsage.unassigned') }}
-                </option>
-              </select>
-            </label>
-            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
-              <button
-                v-for="option in reasoningSourceOptions"
-                :key="option.value"
-                type="button"
-                class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                :class="reasoningSource === option.value
-                  ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
-                @click="changeReasoningSource(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
-              <button
-                v-for="option in reasoningModelScopeOptions"
-                :key="option.value"
-                type="button"
-                class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                :class="reasoningModelScope === option.value
-                  ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
-                @click="changeReasoningModelScope(option.value)"
-              >
-                {{ option.label }}
-              </button>
+          <button
+            type="button"
+            class="btn btn-secondary flex-none"
+            :aria-expanded="reasoningExpanded"
+            @click="toggleReasoning"
+          >
+            <Icon :name="reasoningExpanded ? 'chevronUp' : 'chevronDown'" size="sm" />
+            <span class="hidden sm:inline">
+              {{ reasoningExpanded ? t('departmentUsage.collapseReasoning') : t('departmentUsage.expandReasoning') }}
+            </span>
+          </button>
+        </div>
+
+        <template v-if="reasoningExpanded">
+          <div class="card flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-end">
+            <div class="flex flex-wrap items-center gap-3">
+              <label class="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
+                {{ t('departmentUsage.reasoningScopeLabel') }}
+                <select v-model.number="reasoningGroupID" class="input w-40 py-1 text-xs" @change="loadReasoning">
+                  <option :value="0">{{ t('departmentUsage.reasoningGroupAll') }}</option>
+                  <option v-for="department in sortedDepartments" :key="department.group_id" :value="department.group_id">
+                    {{ department.group_name || t('departmentUsage.unassigned') }}
+                  </option>
+                </select>
+              </label>
+              <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
+                <button
+                  v-for="option in reasoningSourceOptions"
+                  :key="option.value"
+                  type="button"
+                  class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+                  :class="reasoningSource === option.value
+                    ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
+                  @click="changeReasoningSource(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
+                <button
+                  v-for="option in reasoningModelScopeOptions"
+                  :key="option.value"
+                  type="button"
+                  class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+                  :class="reasoningModelScope === option.value
+                    ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
+                  @click="changeReasoningModelScope(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <label class="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
+                <input
+                  v-model="reasoningModelFamily"
+                  type="checkbox"
+                  class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600"
+                  @change="loadReasoning"
+                />
+                {{ t('departmentUsage.reasoningModelFamily') }}
+              </label>
             </div>
           </div>
-        </div>
 
-        <p
-          v-if="reasoningSource === 'requested'"
-          class="rounded-xl bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-        >
-          {{ t('departmentUsage.reasoningRequestedNotice') }}
-        </p>
+          <p
+            v-if="reasoningSource === 'requested'"
+            class="rounded-xl bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            {{ t('departmentUsage.reasoningRequestedNotice') }}
+          </p>
 
-        <DepartmentReasoningEffortChart
-          :title="t('departmentUsage.reasoningDepartmentsTitle')"
-          :rows="reasoningDepartments"
-          :efforts="reasoningEfforts"
-          label-mode="department"
-          :loading="reasoningLoading"
-          :empty-text="t('departmentUsage.reasoningEmpty')"
-        />
-
-        <div class="grid gap-6 lg:grid-cols-2">
           <DepartmentReasoningEffortChart
-            :title="t('departmentUsage.reasoningModelsTitle')"
-            :rows="reasoningModels"
+            :title="t('departmentUsage.reasoningDepartmentsTitle')"
+            :rows="reasoningDepartments"
             :efforts="reasoningEfforts"
-            label-mode="model"
+            label-mode="department"
             :loading="reasoningLoading"
             :empty-text="t('departmentUsage.reasoningEmpty')"
           />
-          <DepartmentReasoningEffortChart
-            :title="t('departmentUsage.reasoningTrendTitle')"
-            :rows="reasoningTrend"
-            :efforts="reasoningEfforts"
-            label-mode="bucket"
-            :loading="reasoningLoading"
-            :empty-text="t('departmentUsage.reasoningEmpty')"
-          />
-        </div>
+
+          <div class="grid gap-6 lg:grid-cols-2">
+            <DepartmentReasoningEffortChart
+              :title="t('departmentUsage.reasoningModelsTitle')"
+              :rows="reasoningModels"
+              :efforts="reasoningEfforts"
+              label-mode="model"
+              :loading="reasoningLoading"
+              :empty-text="t('departmentUsage.reasoningEmpty')"
+            />
+            <DepartmentReasoningEffortChart
+              :title="t('departmentUsage.reasoningTrendTitle')"
+              :rows="reasoningTrend"
+              :efforts="reasoningEfforts"
+              label-mode="bucket"
+              :loading="reasoningLoading"
+              :empty-text="t('departmentUsage.reasoningEmpty')"
+            />
+          </div>
+        </template>
       </section>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
-import DepartmentTrendChart from '@/components/charts/DepartmentTrendChart.vue'
 import DepartmentUsageHeatmap from '@/components/charts/DepartmentUsageHeatmap.vue'
 import DepartmentReasoningEffortChart from '@/components/charts/DepartmentReasoningEffortChart.vue'
+import DepartmentClientSoftwareTable from '@/components/charts/DepartmentClientSoftwareTable.vue'
+import DepartmentInsights from '@/components/charts/DepartmentInsights.vue'
+import DepartmentKpiCards from '@/components/charts/DepartmentKpiCards.vue'
+import DepartmentModelDistribution from '@/components/charts/DepartmentModelDistribution.vue'
+import DepartmentRankingChart from '@/components/charts/DepartmentRankingChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
+  getDepartmentClientSoftware,
+  getDepartmentModelStats,
   getDepartmentReasoningEffort,
   getDepartmentUsage,
   getDepartmentUsageHeatmap,
-  getDepartmentUsageTrend,
-  type DepartmentModelTrendPoint,
+  type ClientSoftwareStat,
+  type DepartmentModelStat,
   type DepartmentReasoningEffortModelScope,
   type DepartmentReasoningEffortRow,
   type DepartmentReasoningEffortSource,
-  type DepartmentTrendGranularity,
-  type DepartmentTrendPoint,
   type DepartmentUsageHeatmapPoint,
-  type DepartmentUsageStat
+  type DepartmentUsageStat,
+  type DepartmentUsageSummary,
+  type UnusedDepartment
 } from '@/api/usage'
-import { formatDateLocalInput, formatNumber } from '@/utils/format'
+import { formatCompactNumber, formatDateLocalInput, formatNumber } from '@/utils/format'
+import { buildDepartmentInsights, type DepartmentInsight } from '@/utils/departmentInsights'
+import { durationSeverity, firstTokenSeverity, LATENCY_TEXT_CLASSES, type LatencySeverity } from '@/utils/latencyHealth'
 import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
@@ -441,25 +577,35 @@ const today = new Date()
 const startDate = ref(formatDateLocalInput(new Date(today.getTime() - 29 * 86400000)))
 const endDate = ref(formatDateLocalInput(today))
 const departments = ref<DepartmentUsageStat[]>([])
+const summary = ref<DepartmentUsageSummary | null>(null)
+const unusedDepartments = ref<UnusedDepartment[]>([])
 const previousDepartments = ref<DepartmentUsageStat[]>([])
+const previousSummary = ref<DepartmentUsageSummary | null>(null)
 const previousRangeLabel = ref('')
 const loading = ref(false)
 let requestSequence = 0
-
-const granularity = ref<DepartmentTrendGranularity>('day')
-const totalTrend = ref<DepartmentTrendPoint[]>([])
-const modelTrend = ref<DepartmentModelTrendPoint[]>([])
-const trendLoading = ref(false)
-let trendSequence = 0
 
 const heatmapPoints = ref<DepartmentUsageHeatmapPoint[]>([])
 const heatmapLoading = ref(false)
 let heatmapSequence = 0
 
+const clientSoftwareData = ref<ClientSoftwareStat[]>([])
+// Kept separate from the table rows so the team insights always describe the
+// whole team even while the table is filtered to one department.
+const teamClientSoftwareData = ref<ClientSoftwareStat[]>([])
+const clientSoftwareLoading = ref(false)
+const clientSoftwareGroupID = ref(0)
+let clientSoftwareSequence = 0
+
+const modelStats = ref<DepartmentModelStat[]>([])
+const modelsLoading = ref(false)
+let modelsSequence = 0
+
 // GPT reasoning-effort mix. Shares are derived on the client from the tier
 // request counts, so the same payload serves the department, model, and trend
 // views.
 const reasoningSection = ref<HTMLElement | null>(null)
+const reasoningExpanded = ref(false)
 const reasoningDepartments = ref<DepartmentReasoningEffortRow[]>([])
 const reasoningModels = ref<DepartmentReasoningEffortRow[]>([])
 const reasoningTrend = ref<DepartmentReasoningEffortRow[]>([])
@@ -468,7 +614,16 @@ const reasoningLoading = ref(false)
 const reasoningGroupID = ref(0)
 const reasoningSource = ref<DepartmentReasoningEffortSource>('effective')
 const reasoningModelScope = ref<DepartmentReasoningEffortModelScope>('gpt')
+const reasoningModelFamily = ref(false)
 let reasoningSequence = 0
+
+const anyLoading = computed(() =>
+  loading.value ||
+  heatmapLoading.value ||
+  clientSoftwareLoading.value ||
+  modelsLoading.value ||
+  reasoningLoading.value
+)
 
 const reasoningSourceOptions = computed<Array<{ value: DepartmentReasoningEffortSource; label: string }>>(() => [
   { value: 'effective', label: t('departmentUsage.reasoningSourceEffective') },
@@ -480,20 +635,19 @@ const reasoningModelScopeOptions = computed<Array<{ value: DepartmentReasoningEf
   { value: 'all', label: t('departmentUsage.reasoningModelScopeAll') }
 ])
 
-const granularityOptions = computed<Array<{ value: DepartmentTrendGranularity; label: string }>>(() => [
-  { value: 'day', label: t('departmentUsage.granularityDay') },
-  { value: 'week', label: t('departmentUsage.granularityWeek') },
-  { value: 'month', label: t('departmentUsage.granularityMonth') }
-])
-
 const rangeLabel = computed(() => `${startDate.value} - ${endDate.value}`)
 
-type SortKey = 'name' | 'tokens' | 'requests' | 'duration'
+type SortKey = 'name' | 'tokens' | 'requests' | 'perCapita'
 
-const sortKey = ref<SortKey>('name')
-const sortDirection = ref<'asc' | 'desc'>('asc')
+const sortKey = ref<SortKey>('tokens')
+const sortDirection = ref<'asc' | 'desc'>('desc')
 
 const expandedGroups = ref<number[]>([])
+
+function perCapitaValue(department: DepartmentUsageStat): number {
+  if (!department.active_user_count || department.active_user_count <= 0) return 0
+  return department.total_tokens / department.active_user_count
+}
 
 const sortedDepartments = computed(() =>
   [...departments.value]
@@ -504,14 +658,274 @@ const sortedDepartments = computed(() =>
           return (a.total_tokens - b.total_tokens) * factor
         case 'requests':
           return (a.requests - b.requests) * factor
-        case 'duration':
-          return ((a.avg_duration_ms || 0) - (b.avg_duration_ms || 0)) * factor
+        case 'perCapita':
+          return (perCapitaValue(a) - perCapitaValue(b)) * factor
         default:
           return (a.group_name || '').localeCompare(b.group_name || '', undefined, { sensitivity: 'base' }) * factor
       }
     })
-    .map((department) => ({ ...department, delta: deltaByGroup.value.get(department.group_id) }))
+    .map((department) => ({
+      ...department,
+      delta: deltaByGroup.value.get(department.group_id),
+      rank: rankChange(department),
+      flags: departmentFlags(department),
+      sharePercent: teamSharePercent(department),
+      intensityRatio: perCapitaRatio(department)
+    }))
 )
+
+// Stable anonymous labels: the code is derived from a department's position in
+// the id-sorted list, so "Department B" always refers to the same team across
+// date ranges and page reloads.
+const anonymousLabels = computed<Record<number, string>>(() => {
+  const ids = [...departments.value].map((department) => department.group_id).sort((a, b) => a - b)
+  const labels: Record<number, string> = {}
+  ids.forEach((id, index) => {
+    labels[id] = t('departmentUsage.anonymousDepartment', { code: anonymousCode(index) })
+  })
+  return labels
+})
+
+function anonymousCode(index: number): string {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  const cycle = Math.floor(index / letters.length)
+  const letter = letters[index % letters.length]
+  return cycle === 0 ? letter : `${letter}${cycle + 1}`
+}
+
+// Extra conclusions derived from the payload the page already loads.
+const translate = (key: string, named?: Record<string, unknown>): string =>
+  named ? t(key, named) : t(key)
+
+const insights = computed<DepartmentInsight[]>(() =>
+  buildDepartmentInsights({
+    summary: summary.value,
+    departments: departments.value,
+    previousDepartments: previousDepartments.value,
+    clients: teamClientSoftwareData.value,
+    unusedDepartments: unusedDepartments.value,
+    anonymousLabels: anonymousLabels.value,
+    translate
+  })
+)
+
+const coveragePercent = computed<number | null>(() => {
+  const total = summary.value?.total_departments || 0
+  if (total <= 0) return null
+  const unused = Math.min(unusedDepartments.value.length, total)
+  return Math.round(((total - unused) / total) * 100)
+})
+
+const coverageHint = computed<string | undefined>(() =>
+  coveragePercent.value === null
+    ? undefined
+    : t('departmentUsage.coverageHint', { percent: coveragePercent.value })
+)
+
+const teamPerCapita = computed(() => {
+  const current = summary.value
+  if (!current || current.active_users <= 0) return 0
+  return current.total_tokens / current.active_users
+})
+
+const teamCacheHitRate = computed(() => {
+  let read = 0
+  let effective = 0
+  for (const department of departments.value) {
+    read += department.cache_read_tokens || 0
+    effective +=
+      (department.input_tokens || 0) +
+      (department.cache_creation_tokens || 0) +
+      (department.cache_read_tokens || 0)
+  }
+  return effective > 0 ? read / effective : 0
+})
+
+const teamTokensPerRequest = computed(() => {
+  let requests = 0
+  let tokens = 0
+  for (const department of departments.value) {
+    requests += department.requests || 0
+    tokens += department.total_tokens || 0
+  }
+  return requests > 0 ? tokens / requests : 0
+})
+
+function perCapitaRatio(department: DepartmentUsageStat): number | null {
+  const value = perCapitaValue(department)
+  if (value <= 0 || teamPerCapita.value <= 0) return null
+  return value / teamPerCapita.value
+}
+
+function teamSharePercent(department: DepartmentUsageStat): number {
+  const total = summary.value?.total_tokens || 0
+  if (total <= 0) return 0
+  return ((department.total_tokens || 0) / total) * 100
+}
+
+function teamShareText(department: DepartmentUsageStat): string {
+  return t('departmentUsage.shareOfTeam', {
+    percent: teamSharePercent(department).toFixed(1)
+  })
+}
+
+function rankByTokens(list: DepartmentUsageStat[]): Map<number, number> {
+  const sorted = [...list]
+    .filter((department) => department.total_tokens > 0)
+    .sort((a, b) => b.total_tokens - a.total_tokens || a.group_id - b.group_id)
+  return new Map(sorted.map((department, index) => [department.group_id, index + 1]))
+}
+
+const currentTokenRanks = computed(() => rankByTokens(departments.value))
+const previousTokenRanks = computed(() => rankByTokens(previousDepartments.value))
+
+interface RankChange {
+  direction: 'up' | 'down' | 'same'
+  count: number
+}
+
+function rankChange(department: DepartmentUsageStat): RankChange | null {
+  const current = currentTokenRanks.value.get(department.group_id)
+  const previous = previousTokenRanks.value.get(department.group_id)
+  if (!current || !previous) return null
+  const diff = previous - current
+  if (diff === 0) return { direction: 'same', count: 0 }
+  return { direction: diff > 0 ? 'up' : 'down', count: Math.abs(diff) }
+}
+
+function rankChangeText(change: RankChange): string {
+  if (change.direction === 'up') return `↑${change.count}`
+  if (change.direction === 'down') return `↓${change.count}`
+  return '–'
+}
+
+function rankChangeClass(change: RankChange): string {
+  if (change.direction === 'up') return 'text-emerald-600 dark:text-emerald-400'
+  if (change.direction === 'down') return 'text-red-500 dark:text-red-400'
+  return 'text-gray-400 dark:text-dark-500'
+}
+
+function rankChangeTitle(change: RankChange): string {
+  if (change.direction === 'up') return t('departmentUsage.rankUp', { count: change.count })
+  if (change.direction === 'down') return t('departmentUsage.rankDown', { count: change.count })
+  return t('departmentUsage.rankSame')
+}
+
+type DepartmentFlagKey = 'cacheLow' | 'heavyContext' | 'slowFirstToken'
+
+const CACHE_FLAG_MIN_EFFECTIVE_TOKENS = 1_000_000
+const HEAVY_CONTEXT_MIN_TOKENS_PER_REQUEST = 20_000
+const FLAG_MIN_REQUESTS = 5
+
+// Health markers that turn the table into an optimization checklist. Cache
+// efficiency is judged against the team average, request size against twice the
+// team average, and first-token latency against the shared latency-health tiers.
+function departmentFlags(department: DepartmentUsageStat): DepartmentFlagKey[] {
+  const flags: DepartmentFlagKey[] = []
+  const effective =
+    (department.input_tokens || 0) +
+    (department.cache_creation_tokens || 0) +
+    (department.cache_read_tokens || 0)
+  if (effective >= CACHE_FLAG_MIN_EFFECTIVE_TOKENS && teamCacheHitRate.value > 0) {
+    const rate = (department.cache_read_tokens || 0) / effective
+    if (rate < teamCacheHitRate.value - 0.05) flags.push('cacheLow')
+  }
+  if (department.requests > 0 && teamTokensPerRequest.value > 0) {
+    const perRequest = department.total_tokens / department.requests
+    if (perRequest >= Math.max(HEAVY_CONTEXT_MIN_TOKENS_PER_REQUEST, teamTokensPerRequest.value * 2)) {
+      flags.push('heavyContext')
+    }
+  }
+  const firstToken = firstTokenSeverity(department.avg_first_token_ms || 0)
+  if (department.requests >= FLAG_MIN_REQUESTS && (firstToken === 'slow' || firstToken === 'critical')) {
+    flags.push('slowFirstToken')
+  }
+  return flags
+}
+
+function flagLabel(flag: DepartmentFlagKey): string {
+  switch (flag) {
+    case 'cacheLow':
+      return t('departmentUsage.flagCacheLow')
+    case 'heavyContext':
+      return t('departmentUsage.flagHeavyContext')
+    default:
+      return t('departmentUsage.flagSlowFirstToken')
+  }
+}
+
+function flagTitle(flags: DepartmentFlagKey[]): string {
+  return flags.map(flagLabel).join(' · ')
+}
+
+function latencyClass(value: number, severity: (ms: number) => LatencySeverity): string {
+  if (!value || value <= 0) return 'text-gray-700 dark:text-dark-200'
+  return LATENCY_TEXT_CLASSES[severity(value)]
+}
+
+function durationClass(value: number): string {
+  return latencyClass(value, durationSeverity)
+}
+
+function firstTokenClass(value: number): string {
+  return latencyClass(value, firstTokenSeverity)
+}
+
+interface HeatmapSummary {
+  peakWeekday: number
+  peakHour: number
+  peakRequests: number
+  offHoursShare: number
+}
+
+// Work hours are Monday-Friday 09:00-18:59 in the requester's timezone, which is
+// the same timezone the heatmap buckets are resolved in.
+function isOffHours(point: DepartmentUsageHeatmapPoint): boolean {
+  return point.weekday === 0 || point.weekday === 6 || point.hour < 9 || point.hour >= 19
+}
+
+const heatmapSummary = computed<HeatmapSummary | null>(() => {
+  const points = heatmapPoints.value
+  if (points.length === 0) return null
+  let total = 0
+  let offHours = 0
+  let peak: DepartmentUsageHeatmapPoint | null = null
+  for (const point of points) {
+    total += point.requests || 0
+    if (isOffHours(point)) offHours += point.requests || 0
+    if (!peak || point.requests > peak.requests) peak = point
+  }
+  if (!peak || total <= 0 || peak.requests <= 0) return null
+  return {
+    peakWeekday: peak.weekday,
+    peakHour: peak.hour,
+    peakRequests: peak.requests,
+    offHoursShare: (offHours / total) * 100
+  }
+})
+
+function weekdayLabel(weekday: number): string {
+  switch (weekday) {
+    case 1:
+      return t('departmentUsage.weekdayMon')
+    case 2:
+      return t('departmentUsage.weekdayTue')
+    case 3:
+      return t('departmentUsage.weekdayWed')
+    case 4:
+      return t('departmentUsage.weekdayThu')
+    case 5:
+      return t('departmentUsage.weekdayFri')
+    case 6:
+      return t('departmentUsage.weekdaySat')
+    default:
+      return t('departmentUsage.weekdaySun')
+  }
+}
+
+function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`
+}
 
 interface DeltaInfo {
   text: string
@@ -542,63 +956,6 @@ const deltaByGroup = computed(() => {
   return map
 })
 
-const trendBuckets = computed(() => totalTrend.value.map((point) => point.bucket))
-
-const totalTrendSeries = computed(() => [
-  {
-    label: t('departmentUsage.reportTotalTitle'),
-    data: totalTrend.value.map((point) => point.total_tokens)
-  }
-])
-
-// Keep the model chart readable: show the busiest models and roll the rest into
-// a single "other" series instead of drawing an unbounded set of lines.
-const MODEL_TREND_LIMIT = 5
-
-const modelTrendSeries = computed(() => {
-  const totalsByModel = new Map<string, number>()
-  const byBucket = new Map<string, Map<string, number>>()
-
-  for (const point of modelTrend.value) {
-    totalsByModel.set(point.model, (totalsByModel.get(point.model) || 0) + point.total_tokens)
-    let bucket = byBucket.get(point.bucket)
-    if (!bucket) {
-      bucket = new Map<string, number>()
-      byBucket.set(point.bucket, bucket)
-    }
-    bucket.set(point.model, (bucket.get(point.model) || 0) + point.total_tokens)
-  }
-
-  const topModels = [...totalsByModel.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MODEL_TREND_LIMIT)
-    .map(([model]) => model)
-  const topModelSet = new Set(topModels)
-
-  const series = topModels.map((model) => ({
-    label: model,
-    data: trendBuckets.value.map((bucket) => byBucket.get(bucket)?.get(model) || 0)
-  }))
-
-  const hasOther = [...totalsByModel.keys()].some((model) => !topModelSet.has(model))
-  if (hasOther) {
-    series.push({
-      label: t('departmentUsage.otherModels'),
-      data: trendBuckets.value.map((bucket) => {
-        const bucketModels = byBucket.get(bucket)
-        if (!bucketModels) return 0
-        let sum = 0
-        for (const [model, tokens] of bucketModels) {
-          if (!topModelSet.has(model)) sum += tokens
-        }
-        return sum
-      })
-    })
-  }
-
-  return series
-})
-
 function formatTokens(value: number): string {
   return formatNumber(value || 0)
 }
@@ -607,6 +964,12 @@ function formatLatency(value: number): string {
   if (!value || value <= 0) return '—'
   if (value < 1000) return `${Math.round(value)} ms`
   return `${(value / 1000).toFixed(2)} s`
+}
+
+function perCapitaTokens(department: DepartmentUsageStat): string {
+  const value = perCapitaValue(department)
+  if (value <= 0) return '—'
+  return formatCompactNumber(value)
 }
 
 function cacheHitRate(department: DepartmentUsageStat): string {
@@ -654,6 +1017,10 @@ function toggleGroup(groupId: number) {
     : [...expandedGroups.value, groupId]
 }
 
+function toggleReasoning() {
+  reasoningExpanded.value = !reasoningExpanded.value
+}
+
 function shiftDate(value: string, days: number): string {
   const date = new Date(`${value}T00:00:00`)
   date.setDate(date.getDate() + days)
@@ -693,43 +1060,33 @@ async function loadDepartments() {
     ])
     if (sequence === requestSequence) {
       departments.value = current.departments || []
+      summary.value = current.summary || null
+      unusedDepartments.value = current.unused_departments || []
       previousDepartments.value = previous?.departments || []
+      previousSummary.value = previous?.summary || null
       previousRangeLabel.value = `${previousStart} - ${previousEnd}`
+      // The department scope of the client software table must follow the
+      // departments that exist in the current range.
+      if (
+        clientSoftwareGroupID.value !== 0 &&
+        !departments.value.some((department) => department.group_id === clientSoftwareGroupID.value)
+      ) {
+        clientSoftwareGroupID.value = 0
+        void loadClientSoftware()
+      }
     }
   } catch (error) {
     if (sequence === requestSequence) {
       departments.value = []
+      summary.value = null
+      unusedDepartments.value = []
       previousDepartments.value = []
+      previousSummary.value = null
       appStore.showError(t('departmentUsage.loadFailed'))
       console.error('Failed to load department usage:', error)
     }
   } finally {
     if (sequence === requestSequence) loading.value = false
-  }
-}
-
-async function loadTrend() {
-  const sequence = ++trendSequence
-  trendLoading.value = true
-  try {
-    const response = await getDepartmentUsageTrend({
-      start_date: startDate.value,
-      end_date: endDate.value,
-      granularity: granularity.value
-    })
-    if (sequence === trendSequence) {
-      totalTrend.value = response.total_trend || []
-      modelTrend.value = response.model_trend || []
-    }
-  } catch (error) {
-    if (sequence === trendSequence) {
-      totalTrend.value = []
-      modelTrend.value = []
-      appStore.showError(t('departmentUsage.reportLoadFailed'))
-      console.error('Failed to load department usage trend:', error)
-    }
-  } finally {
-    if (sequence === trendSequence) trendLoading.value = false
   }
 }
 
@@ -756,7 +1113,63 @@ async function loadHeatmap() {
   }
 }
 
+async function loadClientSoftware() {
+  const sequence = ++clientSoftwareSequence
+  clientSoftwareLoading.value = true
+  try {
+    const response = await getDepartmentClientSoftware({
+      start_date: startDate.value,
+      end_date: endDate.value,
+      group_id: clientSoftwareGroupID.value || undefined,
+      limit: 10
+    })
+    if (sequence === clientSoftwareSequence) {
+      clientSoftwareData.value = response.clients || []
+      if (clientSoftwareGroupID.value === 0) {
+        teamClientSoftwareData.value = response.clients || []
+      }
+    }
+  } catch (error) {
+    if (sequence === clientSoftwareSequence) {
+      clientSoftwareData.value = []
+      if (clientSoftwareGroupID.value === 0) teamClientSoftwareData.value = []
+      appStore.showError(t('departmentUsage.clientSoftwareLoadFailed'))
+      console.error('Failed to load department client software:', error)
+    }
+  } finally {
+    if (sequence === clientSoftwareSequence) clientSoftwareLoading.value = false
+  }
+}
+
+function changeClientSoftwareGroup() {
+  void loadClientSoftware()
+}
+
+async function loadModels() {
+  const sequence = ++modelsSequence
+  modelsLoading.value = true
+  try {
+    const response = await getDepartmentModelStats({
+      start_date: startDate.value,
+      end_date: endDate.value,
+      limit: 8
+    })
+    if (sequence === modelsSequence) {
+      modelStats.value = response.models || []
+    }
+  } catch (error) {
+    if (sequence === modelsSequence) {
+      modelStats.value = []
+      appStore.showError(t('departmentUsage.modelDistributionLoadFailed'))
+      console.error('Failed to load department model stats:', error)
+    }
+  } finally {
+    if (sequence === modelsSequence) modelsLoading.value = false
+  }
+}
+
 async function loadReasoning() {
+  if (!reasoningExpanded.value) return
   const sequence = ++reasoningSequence
   reasoningLoading.value = true
   try {
@@ -766,7 +1179,8 @@ async function loadReasoning() {
       group_id: reasoningGroupID.value || undefined,
       effort_source: reasoningSource.value,
       model_scope: reasoningModelScope.value,
-      granularity: granularity.value
+      model_family: reasoningModelFamily.value,
+      granularity: 'day'
     })
     if (sequence === reasoningSequence) {
       reasoningDepartments.value = response.departments || []
@@ -788,8 +1202,10 @@ async function loadReasoning() {
   }
 }
 
-function focusReasoningDepartment(groupID: number) {
+async function focusReasoningDepartment(groupID: number) {
   reasoningGroupID.value = groupID
+  if (!reasoningExpanded.value) reasoningExpanded.value = true
+  await nextTick()
   void loadReasoning()
   reasoningSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -808,15 +1224,9 @@ function changeReasoningModelScope(value: DepartmentReasoningEffortModelScope) {
 
 function loadUsage() {
   void loadDepartments()
-  void loadTrend()
   void loadHeatmap()
-  void loadReasoning()
-}
-
-function changeGranularity(value: DepartmentTrendGranularity) {
-  if (granularity.value === value) return
-  granularity.value = value
-  void loadTrend()
+  void loadClientSoftware()
+  void loadModels()
   void loadReasoning()
 }
 

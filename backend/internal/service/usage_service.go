@@ -465,6 +465,24 @@ func (s *UsageService) GetDepartmentUsageBreakdownWithFilters(ctx context.Contex
 	return breakdown, nil
 }
 
+// ListDepartmentGroups returns every adoption-candidate department (active,
+// non-exclusive group) for the team usage report. The caller diffs this list
+// against the departments that had usage to compute coverage.
+func (s *UsageService) ListDepartmentGroups(ctx context.Context) ([]usagestats.UnusedDepartment, error) {
+	type departmentGroupsRepo interface {
+		ListDepartmentGroups(ctx context.Context) ([]usagestats.UnusedDepartment, error)
+	}
+	repo, ok := s.usageRepo.(departmentGroupsRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	groups, err := repo.ListDepartmentGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list department groups: %w", err)
+	}
+	return groups, nil
+}
+
 // GetDepartmentUsageHeatmapWithFilters returns the weekday-by-hour activity map
 // for the team usage report, resolved in the requester's timezone.
 func (s *UsageService) GetDepartmentUsageHeatmapWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, timezone string) ([]usagestats.UsageHeatmapPoint, error) {
@@ -480,6 +498,58 @@ func (s *UsageService) GetDepartmentUsageHeatmapWithFilters(ctx context.Context,
 		return nil, fmt.Errorf("get department usage heatmap: %w", err)
 	}
 	return points, nil
+}
+
+// GetDepartmentClientSoftwareStats returns the top client software products
+// across the whole team for the team usage report. Cost fields are never
+// included.
+func (s *UsageService) GetDepartmentClientSoftwareStats(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) ([]usagestats.ClientSoftwareStat, error) {
+	type departmentClientSoftwareRepo interface {
+		GetClientSoftwareStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) ([]usagestats.ClientSoftwareStat, error)
+	}
+	repo, ok := s.usageRepo.(departmentClientSoftwareRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	stats, err := repo.GetClientSoftwareStatsWithFilters(ctx, startTime, endTime, filters, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get department client software stats: %w", err)
+	}
+	return stats, nil
+}
+
+// GetDepartmentModelStats returns the top models across the whole team for the
+// team usage report. Cost fields are never included.
+func (s *UsageService) GetDepartmentModelStats(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) ([]usagestats.DepartmentModelStat, error) {
+	type departmentModelStatsRepo interface {
+		GetDepartmentModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, limit int) ([]usagestats.DepartmentModelStat, error)
+	}
+	repo, ok := s.usageRepo.(departmentModelStatsRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	stats, err := repo.GetDepartmentModelStatsWithFilters(ctx, startTime, endTime, filters, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get department model stats: %w", err)
+	}
+	return stats, nil
+}
+
+// GetDepartmentUsageSummary returns the cost-free headline totals for the team
+// usage report.
+func (s *UsageService) GetDepartmentUsageSummary(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) (*usagestats.DepartmentUsageSummary, error) {
+	type departmentSummaryRepo interface {
+		GetDepartmentUsageSummaryWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) (*usagestats.DepartmentUsageSummary, error)
+	}
+	repo, ok := s.usageRepo.(departmentSummaryRepo)
+	if !ok {
+		return nil, ErrDepartmentUsageUnsupported
+	}
+	summary, err := repo.GetDepartmentUsageSummaryWithFilters(ctx, startTime, endTime, filters)
+	if err != nil {
+		return nil, fmt.Errorf("get department usage summary: %w", err)
+	}
+	return summary, nil
 }
 
 // GetDepartmentReasoningEffortGroupStatsWithFilters returns the reasoning-effort
@@ -501,15 +571,18 @@ func (s *UsageService) GetDepartmentReasoningEffortGroupStatsWithFilters(ctx con
 
 // GetDepartmentReasoningEffortModelStatsWithFilters returns the reasoning-effort
 // mix per model inside the current scope (optionally a single department).
-func (s *UsageService) GetDepartmentReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+// When groupByFamily is true the model dimension is normalized to a base family
+// name so that variants like "gpt-5.1-chat-latest" and "gpt-5.1-codex" are
+// collapsed into a single "gpt-5.1" row.
+func (s *UsageService) GetDepartmentReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string, groupByFamily bool) ([]usagestats.ReasoningEffortStat, error) {
 	type departmentReasoningEffortModelRepo interface {
-		GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error)
+		GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string, groupByFamily bool) ([]usagestats.ReasoningEffortStat, error)
 	}
 	repo, ok := s.usageRepo.(departmentReasoningEffortModelRepo)
 	if !ok {
 		return nil, ErrDepartmentUsageUnsupported
 	}
-	stats, err := repo.GetReasoningEffortModelStatsWithFilters(ctx, startTime, endTime, filters, source, modelScope)
+	stats, err := repo.GetReasoningEffortModelStatsWithFilters(ctx, startTime, endTime, filters, source, modelScope, groupByFamily)
 	if err != nil {
 		return nil, fmt.Errorf("get department reasoning effort model stats: %w", err)
 	}

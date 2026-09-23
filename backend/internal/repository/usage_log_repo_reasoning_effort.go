@@ -41,6 +41,29 @@ func reasoningEffortBucketExpression(source string) string {
 	)
 }
 
+// reasoningEffortModelExpr returns the SQL expression for the model dimension.
+// When groupByFamily is true, model names are normalized to their base family
+// by stripping date suffixes (e.g. "-2025-08-07") and known variant suffixes
+// (e.g. "-mini", "-chat-latest", "-codex-max") so that all variants of the same
+// model family are grouped together.
+func reasoningEffortModelExpr(alias string, groupByFamily bool) string {
+	if !groupByFamily {
+		return resolveModelDimensionExpressionWithAlias(usagestats.ModelSourceRequested, alias)
+	}
+	column := func(name string) string {
+		if alias == "" {
+			return name
+		}
+		return alias + "." + name
+	}
+	base := fmt.Sprintf("COALESCE(NULLIF(TRIM(%s), ''), %s)", column("requested_model"), column("model"))
+	// 1. Strip date suffixes: -2025-08-07, _2025_08_07
+	expr := fmt.Sprintf("REGEXP_REPLACE(%s, '[-_]\\d{4}[-_]\\d{2}[-_]\\d{2}$', '', 'g')", base)
+	// 2. Strip known variant suffixes so family names are stable.
+	expr = fmt.Sprintf("REGEXP_REPLACE(%s, '-(chat-latest|chat|codex-max|codex-mini|codex-spark|codex|search-api|pro|plus|mini|nano|lite|sol|terra|luna)$', '', 'g')", expr)
+	return expr
+}
+
 // appendReasoningEffortModelScopeCondition restricts the report to GPT-family
 // models unless the caller explicitly asked for every model. Other providers
 // occasionally write a reasoning effort too, so this filter keeps the GPT view
@@ -152,10 +175,12 @@ func (r *usageLogRepository) GetReasoningEffortGroupStatsWithFilters(ctx context
 
 // GetReasoningEffortModelStatsWithFilters aggregates reasoning-effort tiers per
 // model. Combined with a group filter it answers "how does one department spend
-// its effort per model".
-func (r *usageLogRepository) GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string) ([]usagestats.ReasoningEffortStat, error) {
+// its effort per model". When groupByFamily is true the model dimension is
+// normalized to a base family name (e.g. "gpt-5.1" instead of
+// "gpt-5.1-chat-latest") so variants are collapsed into one row.
+func (r *usageLogRepository) GetReasoningEffortModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters, source, modelScope string, groupByFamily bool) ([]usagestats.ReasoningEffortStat, error) {
 	effortExpr := reasoningEffortBucketExpression(source)
-	modelExpr := resolveModelDimensionExpressionWithAlias(usagestats.ModelSourceRequested, "ul")
+	modelExpr := reasoningEffortModelExpr("ul", groupByFamily)
 
 	columns := fmt.Sprintf(
 		reasoningEffortSelectColumns,
