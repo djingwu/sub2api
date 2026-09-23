@@ -127,13 +127,17 @@ func appendRawUsageLogModelQueryFilter(query string, args []any, model string) (
 }
 
 func appendUsageLogModelQueryFilter(query string, args []any, model string, source string) (string, []any) {
+	return appendUsageLogModelQueryFilterWithAlias(query, args, model, source, "")
+}
+
+func appendUsageLogModelQueryFilterWithAlias(query string, args []any, model string, source string, alias string) (string, []any) {
 	if strings.TrimSpace(source) == "" {
 		return appendRawUsageLogModelQueryFilter(query, args, model)
 	}
 	if strings.TrimSpace(model) == "" {
 		return query, args
 	}
-	query += fmt.Sprintf(" AND %s = $%d", resolveModelDimensionExpression(source), len(args)+1)
+	query += fmt.Sprintf(" AND %s = $%d", resolveModelDimensionExpressionWithAlias(source, alias), len(args)+1)
 	args = append(args, model)
 	return query, args
 }

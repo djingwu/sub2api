@@ -351,7 +351,6 @@
 
           <DepartmentRankingChart
             :departments="sortedDepartments"
-            :anonymous-labels="anonymousLabels"
             :loading="loading"
             :empty-text="t('departmentUsage.noData')"
           />
@@ -456,55 +455,21 @@
                   </option>
                 </select>
               </label>
-              <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
-                <button
-                  v-for="option in reasoningSourceOptions"
-                  :key="option.value"
-                  type="button"
-                  class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                  :class="reasoningSource === option.value
-                    ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
-                  @click="changeReasoningSource(option.value)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
-              <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800">
-                <button
-                  v-for="option in reasoningModelScopeOptions"
-                  :key="option.value"
-                  type="button"
-                  class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-                  :class="reasoningModelScope === option.value
-                    ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700 dark:text-primary-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200'"
-                  @click="changeReasoningModelScope(option.value)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
               <label class="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
-                <input
-                  v-model="reasoningModelFamily"
-                  type="checkbox"
-                  class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600"
-                  @change="loadReasoning"
-                />
-                {{ t('departmentUsage.reasoningModelFamily') }}
+                {{ t('departmentUsage.reasoningModelLabel') }}
+                <select v-model="reasoningModel" class="input w-48 py-1 text-xs" @change="loadReasoning">
+                  <option value="">{{ t('departmentUsage.reasoningModelAll') }}</option>
+                  <option v-for="model in reasoningModelOptions" :key="model" :value="model">
+                    {{ model }}
+                  </option>
+                </select>
               </label>
             </div>
           </div>
 
-          <p
-            v-if="reasoningSource === 'requested'"
-            class="rounded-xl bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-          >
-            {{ t('departmentUsage.reasoningRequestedNotice') }}
-          </p>
-
           <DepartmentReasoningEffortChart
-            :title="t('departmentUsage.reasoningDepartmentsTitle')"
+            :title="reasoningDepartmentsTitle"
+            :description="reasoningDepartmentsDescription"
             :rows="reasoningDepartments"
             :efforts="reasoningEfforts"
             label-mode="department"
@@ -557,9 +522,7 @@ import {
   getDepartmentUsageHeatmap,
   type ClientSoftwareStat,
   type DepartmentModelStat,
-  type DepartmentReasoningEffortModelScope,
   type DepartmentReasoningEffortRow,
-  type DepartmentReasoningEffortSource,
   type DepartmentUsageHeatmapPoint,
   type DepartmentUsageStat,
   type DepartmentUsageSummary,
@@ -601,20 +564,18 @@ const modelStats = ref<DepartmentModelStat[]>([])
 const modelsLoading = ref(false)
 let modelsSequence = 0
 
-// GPT reasoning-effort mix. Shares are derived on the client from the tier
-// request counts, so the same payload serves the department, model, and trend
-// views.
+// GPT reasoning-effort mix. The report always uses the effective effort within
+// the GPT family. Shares are derived on the client from the tier request
+// counts, so the same payload serves the department, model, and trend views.
 const reasoningSection = ref<HTMLElement | null>(null)
-const reasoningExpanded = ref(false)
+const reasoningExpanded = ref(true)
 const reasoningDepartments = ref<DepartmentReasoningEffortRow[]>([])
 const reasoningModels = ref<DepartmentReasoningEffortRow[]>([])
 const reasoningTrend = ref<DepartmentReasoningEffortRow[]>([])
 const reasoningEfforts = ref<string[]>([])
 const reasoningLoading = ref(false)
 const reasoningGroupID = ref(0)
-const reasoningSource = ref<DepartmentReasoningEffortSource>('effective')
-const reasoningModelScope = ref<DepartmentReasoningEffortModelScope>('gpt')
-const reasoningModelFamily = ref(false)
+const reasoningModel = ref('')
 let reasoningSequence = 0
 
 const anyLoading = computed(() =>
@@ -625,15 +586,39 @@ const anyLoading = computed(() =>
   reasoningLoading.value
 )
 
-const reasoningSourceOptions = computed<Array<{ value: DepartmentReasoningEffortSource; label: string }>>(() => [
-  { value: 'effective', label: t('departmentUsage.reasoningSourceEffective') },
-  { value: 'requested', label: t('departmentUsage.reasoningSourceRequested') }
-])
+// GPT model options are cached from every reasoning payload plus the
+// model-distribution payload, so narrowing to one model never shrinks the
+// dropdown options.
+const reasoningKnownModels = ref<string[]>([])
+function rememberReasoningModels(names: Array<string | undefined | null>) {
+  const merged = new Set(reasoningKnownModels.value)
+  for (const name of names) {
+    if (name) merged.add(name)
+  }
+  reasoningKnownModels.value = [...merged].sort((a, b) => a.localeCompare(b))
+}
+const reasoningModelOptions = computed<string[]>(() => {
+  const names = new Set<string>(reasoningKnownModels.value)
+  for (const row of reasoningModels.value) {
+    if (row.model) names.add(row.model)
+  }
+  for (const stat of modelStats.value) {
+    if (stat.model && stat.model.toLowerCase().startsWith('gpt')) names.add(stat.model)
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
+})
 
-const reasoningModelScopeOptions = computed<Array<{ value: DepartmentReasoningEffortModelScope; label: string }>>(() => [
-  { value: 'gpt', label: t('departmentUsage.reasoningModelScopeGpt') },
-  { value: 'all', label: t('departmentUsage.reasoningModelScopeAll') }
-])
+const reasoningDepartmentsTitle = computed(() =>
+  reasoningModel.value
+    ? t('departmentUsage.reasoningDepartmentsTitleForModel', { model: reasoningModel.value })
+    : t('departmentUsage.reasoningDepartmentsTitle')
+)
+
+const reasoningDepartmentsDescription = computed(() =>
+  reasoningModel.value
+    ? t('departmentUsage.reasoningDepartmentsDescriptionForModel', { model: reasoningModel.value })
+    : t('departmentUsage.reasoningDepartmentsDescription')
+)
 
 const rangeLabel = computed(() => `${startDate.value} - ${endDate.value}`)
 
@@ -674,25 +659,6 @@ const sortedDepartments = computed(() =>
     }))
 )
 
-// Stable anonymous labels: the code is derived from a department's position in
-// the id-sorted list, so "Department B" always refers to the same team across
-// date ranges and page reloads.
-const anonymousLabels = computed<Record<number, string>>(() => {
-  const ids = [...departments.value].map((department) => department.group_id).sort((a, b) => a - b)
-  const labels: Record<number, string> = {}
-  ids.forEach((id, index) => {
-    labels[id] = t('departmentUsage.anonymousDepartment', { code: anonymousCode(index) })
-  })
-  return labels
-})
-
-function anonymousCode(index: number): string {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-  const cycle = Math.floor(index / letters.length)
-  const letter = letters[index % letters.length]
-  return cycle === 0 ? letter : `${letter}${cycle + 1}`
-}
-
 // Extra conclusions derived from the payload the page already loads.
 const translate = (key: string, named?: Record<string, unknown>): string =>
   named ? t(key, named) : t(key)
@@ -704,7 +670,6 @@ const insights = computed<DepartmentInsight[]>(() =>
     previousDepartments: previousDepartments.value,
     clients: teamClientSoftwareData.value,
     unusedDepartments: unusedDepartments.value,
-    anonymousLabels: anonymousLabels.value,
     translate
   })
 )
@@ -1156,6 +1121,7 @@ async function loadModels() {
     })
     if (sequence === modelsSequence) {
       modelStats.value = response.models || []
+      rememberReasoningModels(modelStats.value.map((stat) => stat.model))
     }
   } catch (error) {
     if (sequence === modelsSequence) {
@@ -1177,9 +1143,7 @@ async function loadReasoning() {
       start_date: startDate.value,
       end_date: endDate.value,
       group_id: reasoningGroupID.value || undefined,
-      effort_source: reasoningSource.value,
-      model_scope: reasoningModelScope.value,
-      model_family: reasoningModelFamily.value,
+      model: reasoningModel.value || undefined,
       granularity: 'day'
     })
     if (sequence === reasoningSequence) {
@@ -1187,6 +1151,7 @@ async function loadReasoning() {
       reasoningModels.value = response.models || []
       reasoningTrend.value = response.trend || []
       reasoningEfforts.value = response.efforts || []
+      rememberReasoningModels(reasoningModels.value.map((row) => row.model))
     }
   } catch (error) {
     if (sequence === reasoningSequence) {
@@ -1208,18 +1173,6 @@ async function focusReasoningDepartment(groupID: number) {
   await nextTick()
   void loadReasoning()
   reasoningSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function changeReasoningSource(value: DepartmentReasoningEffortSource) {
-  if (reasoningSource.value === value) return
-  reasoningSource.value = value
-  void loadReasoning()
-}
-
-function changeReasoningModelScope(value: DepartmentReasoningEffortModelScope) {
-  if (reasoningModelScope.value === value) return
-  reasoningModelScope.value = value
-  void loadReasoning()
 }
 
 function loadUsage() {

@@ -231,7 +231,7 @@ func TestDepartmentReasoningEffortDefaultsToGPTAndEffective(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&user_id=99&api_key_id=3&model=should-be-ignored", nil)
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&user_id=99&api_key_id=3", nil)
 	rec := httptest.NewRecorder()
 	departmentReasoningRouter(repo).ServeHTTP(rec, req)
 
@@ -243,6 +243,7 @@ func TestDepartmentReasoningEffortDefaultsToGPTAndEffective(t *testing.T) {
 	require.Equal(t, int64(0), repo.departmentReasoningGroupFilters.UserID)
 	require.Equal(t, int64(0), repo.departmentReasoningGroupFilters.APIKeyID)
 	require.Equal(t, int64(0), repo.departmentReasoningGroupFilters.GroupID)
+	require.Equal(t, "", repo.departmentReasoningGroupFilters.Model)
 
 	var envelope struct {
 		Data struct {
@@ -288,20 +289,23 @@ func TestDepartmentReasoningEffortDefaultsToGPTAndEffective(t *testing.T) {
 	require.Equal(t, "2026-09-02", envelope.Data.Trend[1].Bucket)
 }
 
-func TestDepartmentReasoningEffortScopesToDepartmentAndOverrides(t *testing.T) {
+func TestDepartmentReasoningEffortScopesToDepartmentAndModel(t *testing.T) {
 	repo := &userUsageRepoCapture{}
 
-	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&group_id=5&effort_source=requested&model_scope=all&granularity=week", nil)
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&group_id=5&model=gpt-5.6-sol&effort_source=requested&model_scope=all&granularity=week", nil)
 	rec := httptest.NewRecorder()
 	departmentReasoningRouter(repo).ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(5), repo.departmentReasoningGroupFilters.GroupID)
-	require.Equal(t, "requested", repo.departmentReasoningGroupSource)
-	require.Equal(t, "all", repo.departmentReasoningGroupModelScope)
+	require.Equal(t, "gpt-5.6-sol", repo.departmentReasoningGroupFilters.Model)
+	require.Equal(t, usagestats.ModelSourceRequested, repo.departmentReasoningGroupFilters.ModelFilterSource)
+	require.Equal(t, "effective", repo.departmentReasoningGroupSource)
+	require.Equal(t, "gpt", repo.departmentReasoningGroupModelScope)
 	require.Equal(t, "week", repo.departmentReasoningTrendGranularity)
-	require.Contains(t, rec.Body.String(), `"effort_source":"requested"`)
-	require.Contains(t, rec.Body.String(), `"model_scope":"all"`)
+	require.Contains(t, rec.Body.String(), `"effort_source":"effective"`)
+	require.Contains(t, rec.Body.String(), `"model_scope":"gpt"`)
+	require.Contains(t, rec.Body.String(), `"model":"gpt-5.6-sol"`)
 	require.Contains(t, rec.Body.String(), `"departments":[]`)
 	require.Contains(t, rec.Body.String(), `"models":[]`)
 	require.Contains(t, rec.Body.String(), `"trend":[]`)

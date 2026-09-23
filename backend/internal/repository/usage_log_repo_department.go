@@ -15,10 +15,25 @@ const departmentTopModelLimit = 5
 // heatmap all count "usage" the same way.
 const departmentTokenSum = "COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0)"
 
+// departmentGroupScopeCondition keeps team-facing aggregates limited to real
+// departments: active, non-deleted, exclusive DingTalk subscription groups.
+// Standard groups such as 免费组 or cline and non-exclusive plan groups such as
+// the fixed $200 subscription group are not departments, so their usage never
+// shows up as a team row. The caller supplies the group_id column reference.
+const departmentGroupScopeCondition = `%s IN (
+			SELECT g.id
+			FROM groups g
+			WHERE g.deleted_at IS NULL
+			  AND g.status = 'active'
+			  AND g.subscription_type = 'subscription'
+			  AND g.is_exclusive = TRUE
+		)`
+
 // appendDepartmentUsageFilterConditions applies the shared usage filter shape to
-// an analytics query. Callers that serve team-facing aggregates pass an empty
-// business filter set on purpose: accepting user/api-key/group filters there
-// would let a member narrow the result to another team's data.
+// an analytics query and restricts it to department groups (see
+// departmentGroupScopeCondition). Callers that serve team-facing aggregates pass
+// an empty business filter set on purpose: accepting user/api-key/group filters
+// there would let a member narrow the result to another team's data.
 func appendDepartmentUsageFilterConditions(query string, args []any, alias string, filters usagestats.UsageLogFilters) (string, []any) {
 	column := func(name string) string {
 		if alias == "" {
@@ -42,7 +57,7 @@ func appendDepartmentUsageFilterConditions(query string, args []any, alias strin
 		query += fmt.Sprintf(" AND %s = $%d", column("group_id"), len(args)+1)
 		args = append(args, filters.GroupID)
 	}
-	query, args = appendUsageLogModelQueryFilter(query, args, filters.Model, filters.ModelFilterSource)
+	query, args = appendUsageLogModelQueryFilterWithAlias(query, args, filters.Model, filters.ModelFilterSource, alias)
 	query, args = appendRequestTypeOrStreamQueryFilter(query, args, filters.RequestType, filters.Stream)
 	query, args = appendNativeCompactionV2QueryFilter(query, args, filters.NativeCompactionV2, alias)
 	if filters.BillingType != nil {
@@ -53,6 +68,7 @@ func appendDepartmentUsageFilterConditions(query string, args []any, alias strin
 	if filters.UpstreamModelMismatch != nil {
 		query += " AND " + upstreamModelMismatchCondition(column("upstream_model_mismatch"), *filters.UpstreamModelMismatch)
 	}
+	query += fmt.Sprintf(" AND "+departmentGroupScopeCondition, column("group_id"))
 	return query, args
 }
 
@@ -439,9 +455,12 @@ func (r *usageLogRepository) GetDepartmentModelStatsWithFilters(ctx context.Cont
 
 	args := []any{startTime, endTime}
 	query, args = appendDepartmentUsageFilterConditions(query, args, "ul", filters)
+	// Positional GROUP BY/ORDER BY: "model" also exists as a usage_logs column,
+	// so an unqualified reference would resolve to ul.model instead of the
+	// requested-model alias above.
 	query += fmt.Sprintf(`
-		GROUP BY model
-		ORDER BY total_tokens DESC, model ASC
+		GROUP BY 1
+		ORDER BY total_tokens DESC, 1 ASC
 		LIMIT $%d
 	`, len(args)+1)
 	args = append(args, limit)
@@ -519,16 +538,19 @@ func (r *usageLogRepository) GetDepartmentUsageSummaryWithFilters(ctx context.Co
 	return &summary, nil
 }
 
-// ListDepartmentGroups returns every adoption-candidate group (active and not
-// exclusive) so the team usage report can show which departments had no usage
-// in the selected range. Deleted and exclusive groups are never reported.
+// ListDepartmentGroups returns every real department (active, exclusive
+// DingTalk subscription group) so the team usage report can show which
+// departments had no usage in the selected range. Standard groups (免费组,
+// cline, ...), non-exclusive plan groups, and soft-deleted groups are never
+// reported.
 func (r *usageLogRepository) ListDepartmentGroups(ctx context.Context) (results []usagestats.UnusedDepartment, err error) {
 	rows, err := r.sql.QueryContext(ctx, `
 		SELECT id, COALESCE(name, '')
 		FROM groups
 		WHERE deleted_at IS NULL
 		  AND status = 'active'
-		  AND COALESCE(is_exclusive, FALSE) = FALSE
+		  AND subscription_type = 'subscription'
+		  AND is_exclusive = TRUE
 		ORDER BY name ASC, id ASC`)
 	if err != nil {
 		return nil, err

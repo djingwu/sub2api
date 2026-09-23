@@ -228,6 +228,7 @@ export interface DepartmentReasoningEffortResponse {
   effort_source: DepartmentReasoningEffortSource
   model_scope: DepartmentReasoningEffortModelScope
   model_family: boolean
+  model?: string
   granularity: DepartmentTrendGranularity
   efforts: string[]
   departments: DepartmentReasoningEffortRow[]
@@ -503,16 +504,16 @@ export async function getDepartmentModelStats(params: {
 
 /**
  * Get the GPT reasoning-effort mix per department, per model, and over time.
- * Passing group_id narrows the report to a single department. Shares are
- * computed on the client from the returned tier counts.
+ * Passing group_id narrows the report to a single department, and passing
+ * model narrows it to one exact requested model. The backend always uses the
+ * effective effort within the GPT family. Shares are computed on the client
+ * from the returned tier counts.
  */
 export async function getDepartmentReasoningEffort(params: {
   start_date: string
   end_date: string
   group_id?: number
-  effort_source?: DepartmentReasoningEffortSource
-  model_scope?: DepartmentReasoningEffortModelScope
-  model_family?: boolean
+  model?: string
   granularity?: DepartmentTrendGranularity
 }): Promise<DepartmentReasoningEffortResponse> {
   const { data } = await apiClient.get<DepartmentReasoningEffortResponse>(

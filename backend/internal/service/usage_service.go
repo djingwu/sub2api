@@ -465,9 +465,9 @@ func (s *UsageService) GetDepartmentUsageBreakdownWithFilters(ctx context.Contex
 	return breakdown, nil
 }
 
-// ListDepartmentGroups returns every adoption-candidate department (active,
-// non-exclusive group) for the team usage report. The caller diffs this list
-// against the departments that had usage to compute coverage.
+// ListDepartmentGroups returns every real department (active, exclusive
+// DingTalk subscription group) for the team usage report. The caller diffs this
+// list against the departments that had usage to compute coverage.
 func (s *UsageService) ListDepartmentGroups(ctx context.Context) ([]usagestats.UnusedDepartment, error) {
 	type departmentGroupsRepo interface {
 		ListDepartmentGroups(ctx context.Context) ([]usagestats.UnusedDepartment, error)

@@ -15,8 +15,6 @@ const translate: TranslateFn = (key, named) => {
   return `${key}(${params})`
 }
 
-const labels = { 1: '部门 A', 2: '部门 B', 3: '部门 C' }
-
 function department(overrides: Partial<DepartmentUsageStat> = {}): DepartmentUsageStat {
   return {
     group_id: 1,
@@ -46,7 +44,6 @@ function build(overrides: Partial<DepartmentInsightInput>) {
     previousDepartments: [],
     clients: [],
     unusedDepartments: [],
-    anonymousLabels: labels,
     translate,
     ...overrides
   })
@@ -60,24 +57,24 @@ describe('buildDepartmentInsights', () => {
   it('reports the fastest growing and fastest declining departments', () => {
     const insights = build({
       departments: [
-        department({ group_id: 1, total_tokens: 22_000 }),
-        department({ group_id: 2, total_tokens: 5_000 })
+        department({ group_id: 1, group_name: '应用组', total_tokens: 22_000 }),
+        department({ group_id: 2, group_name: '平台组', total_tokens: 5_000 })
       ],
       previousDepartments: [
-        department({ group_id: 1, total_tokens: 10_000 }),
-        department({ group_id: 2, total_tokens: 10_000 })
+        department({ group_id: 1, group_name: '应用组', total_tokens: 10_000 }),
+        department({ group_id: 2, group_name: '平台组', total_tokens: 10_000 })
       ]
     })
 
     const growth = insights.find((insight) => insight.id === 'growth')
     expect(growth?.text).toContain('departmentUsage.insightGrowth')
-    expect(growth?.text).toContain('name=部门 A')
+    expect(growth?.text).toContain('name=应用组')
     expect(growth?.text).toContain('percent=+120.0%')
     expect(growth?.text).toContain('tokens=22.0K')
 
     const decline = insights.find((insight) => insight.id === 'decline')
     expect(decline?.text).toContain('departmentUsage.insightDecline')
-    expect(decline?.text).toContain('name=部门 B')
+    expect(decline?.text).toContain('name=平台组')
     expect(decline?.text).toContain('percent=-50.0%')
   })
 
@@ -91,13 +88,13 @@ describe('buildDepartmentInsights', () => {
         total_departments: 2
       },
       departments: [
-        department({ group_id: 1, total_tokens: 40_000, active_user_count: 2 }),
-        department({ group_id: 2, total_tokens: 18_000, active_user_count: 1 })
+        department({ group_id: 1, group_name: '应用组', total_tokens: 40_000, active_user_count: 2 }),
+        department({ group_id: 2, group_name: '平台组', total_tokens: 18_000, active_user_count: 1 })
       ]
     })
 
     const intensity = insights.find((insight) => insight.id === 'intensity')
-    expect(intensity?.text).toContain('name=部门 A')
+    expect(intensity?.text).toContain('name=应用组')
     expect(intensity?.text).toContain('perCapita=20.0K')
     expect(intensity?.text).toContain('ratio=2.0')
   })
@@ -107,12 +104,14 @@ describe('buildDepartmentInsights', () => {
       departments: [
         department({
           group_id: 1,
+          group_name: '应用组',
           total_tokens: 2_000_000,
           input_tokens: 1_800_000,
           cache_read_tokens: 200_000
         }),
         department({
           group_id: 2,
+          group_name: '平台组',
           total_tokens: 1_000_000,
           input_tokens: 200_000,
           cache_read_tokens: 800_000
@@ -122,7 +121,7 @@ describe('buildDepartmentInsights', () => {
 
     const cache = insights.find((insight) => insight.id === 'cache')
     expect(cache?.tone).toBe('warning')
-    expect(cache?.text).toContain('name=部门 A')
+    expect(cache?.text).toContain('name=应用组')
     expect(cache?.text).toContain('rate=10.0%')
     expect(cache?.text).toContain('average=33.3%')
     expect(cache?.text).toContain('input=2.0M')

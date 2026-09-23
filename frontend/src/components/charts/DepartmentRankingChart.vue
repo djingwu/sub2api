@@ -59,7 +59,6 @@ const { t } = useI18n()
 
 const props = defineProps<{
   departments: DepartmentUsageStat[]
-  anonymousLabels: Record<number, string>
   loading?: boolean
   emptyText: string
 }>()
@@ -72,7 +71,7 @@ const ranking = computed(() => {
   const max = sorted[0]?.total_tokens || 1
   return sorted.slice(0, RANKING_LIMIT).map((dept, index) => ({
     id: dept.group_id,
-    label: props.anonymousLabels[dept.group_id] || t('departmentUsage.unassigned'),
+    label: dept.group_name || t('departmentUsage.unassigned'),
     tokensText: formatNumber(dept.total_tokens || 0),
     share: total > 0 ? (dept.total_tokens / total) * 100 : 0,
     relative: (dept.total_tokens / max) * 100,

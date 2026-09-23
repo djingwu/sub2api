@@ -32,7 +32,6 @@ export interface DepartmentInsightInput {
   previousDepartments: DepartmentUsageStat[]
   clients: ClientSoftwareStat[]
   unusedDepartments: UnusedDepartment[]
-  anonymousLabels: Record<number, string>
   translate: TranslateFn
 }
 
@@ -71,7 +70,7 @@ function tokenDelta(
 }
 
 function departmentLabel(input: DepartmentInsightInput, department: DepartmentUsageStat): string {
-  return input.anonymousLabels[department.group_id] || input.translate('departmentUsage.unassigned')
+  return department.group_name || input.translate('departmentUsage.unassigned')
 }
 
 // Data-only conclusions for the team report. Everything is derived from the

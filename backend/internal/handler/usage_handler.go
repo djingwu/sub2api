@@ -716,9 +716,10 @@ func (h *UsageHandler) DepartmentUsage(c *gin.Context) {
 		return
 	}
 
-	// Coverage is derived from the group directory: active departments over all
-	// adoption-candidate groups. Groups with no usage in the range are listed
-	// separately so the table stays focused on actual usage.
+	// Coverage is derived from the department directory: departments with usage
+	// over all real departments (exclusive DingTalk subscription groups, never
+	// 免费组/cline/plan groups). Departments with no usage in the range are
+	// listed separately so the table stays focused on actual usage.
 	groups, err := h.usageService.ListDepartmentGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -900,7 +901,11 @@ func (h *UsageHandler) DepartmentModelStats(c *gin.Context) {
 
 // DepartmentReasoningEffort returns the GPT reasoning-effort mix for the team
 // usage report: per department, per model, and over time. Costs are never
-// included.
+// included. The report always uses the effective effort and the GPT family;
+// callers narrow it with group_id (single department) and model (one exact
+// requested model such as "gpt-5.6-sol"). Legacy effort_source / model_scope /
+// model_family query params are still accepted but ignored so old clients keep
+// working.
 // GET /api/v1/usage/department-usage/reasoning
 func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
@@ -913,16 +918,16 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 		return
 	}
 
-	effortSource := strings.TrimSpace(c.DefaultQuery("effort_source", "effective"))
-	if effortSource != "effective" && effortSource != "requested" {
+	if raw := strings.TrimSpace(c.Query("effort_source")); raw != "" && raw != "effective" && raw != "requested" {
 		response.BadRequest(c, "Invalid effort_source, use effective or requested")
 		return
 	}
-	modelScope := strings.TrimSpace(c.DefaultQuery("model_scope", "gpt"))
-	if modelScope != "gpt" && modelScope != "all" {
+	if raw := strings.TrimSpace(c.Query("model_scope")); raw != "" && raw != "gpt" && raw != "all" {
 		response.BadRequest(c, "Invalid model_scope, use gpt or all")
 		return
 	}
+	const effortSource = "effective"
+	const modelScope = "gpt"
 
 	var groupID int64
 	if groupIDStr := strings.TrimSpace(c.Query("group_id")); groupIDStr != "" {
@@ -933,10 +938,19 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 		}
 		groupID = id
 	}
-	// Team-facing report: only the department scope is accepted. User, API key,
-	// and personal model filters are deliberately ignored so a member cannot
-	// drill into another team's usage.
-	filters := usagestats.UsageLogFilters{GroupID: groupID}
+	model := strings.TrimSpace(c.Query("model"))
+	if len(model) > 128 {
+		response.BadRequest(c, "Invalid model")
+		return
+	}
+	// Team-facing report: only the department scope plus one exact model are
+	// accepted. User and API key filters are deliberately ignored so a member
+	// cannot drill into another person's usage.
+	filters := usagestats.UsageLogFilters{
+		GroupID:           groupID,
+		Model:             model,
+		ModelFilterSource: usagestats.ModelSourceRequested,
+	}
 	granularity := c.DefaultQuery("granularity", "day")
 
 	groupStats, err := h.usageService.GetDepartmentReasoningEffortGroupStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope)
@@ -944,8 +958,7 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	modelFamily := c.DefaultQuery("model_family", "false") == "true"
-	modelStats, err := h.usageService.GetDepartmentReasoningEffortModelStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope, modelFamily)
+	modelStats, err := h.usageService.GetDepartmentReasoningEffortModelStatsWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, filters, effortSource, modelScope, false)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -959,7 +972,8 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 	response.Success(c, gin.H{
 		"effort_source": effortSource,
 		"model_scope":   modelScope,
-		"model_family":  modelFamily,
+		"model_family":  false,
+		"model":         model,
 		"granularity":   granularity,
 		"efforts":       departmentReasoningEffortTiers(groupStats),
 		"departments":   buildDepartmentReasoningEffortRows(groupStats, departmentReasoningEffortDimensionGroup),
