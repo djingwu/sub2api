@@ -16,8 +16,9 @@ import (
 // against a real PostgreSQL instance. It guards the SQL that the capture-based
 // handler tests cannot see, in particular the requested-model GROUP BY on
 // GetDepartmentModelStatsWithFilters where an unqualified "model" alias used to
-// collide with the usage_logs.model column, and the department-only group scope
-// that keeps 免费组/cline/plan usage out of every aggregate.
+// collide with the usage_logs.model column, and both group scopes: the
+// department scope keeps 免费组/cline/plan usage out of every aggregate while
+// the other scope surfaces exactly that usage, including ungrouped rows.
 func TestUsageLog_DepartmentReportQueries(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
@@ -80,6 +81,19 @@ func TestUsageLog_DepartmentReportQueries(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
+	// Usage without a group (未分组) belongs to the "other" scope as well.
+	_, err := repo.Create(ctx, &service.UsageLog{
+		UserID:         user.ID,
+		APIKeyID:       apiKey.ID,
+		AccountID:      account.ID,
+		Model:          "mapped-model",
+		RequestedModel: "gpt-5.6-luna",
+		InputTokens:    400,
+		OutputTokens:   100,
+		UserAgent:      &userAgent,
+		CreatedAt:      now,
+	})
+	require.NoError(t, err)
 
 	start := now.Add(-time.Hour)
 	end := now.Add(time.Hour)
@@ -108,6 +122,12 @@ func TestUsageLog_DepartmentReportQueries(t *testing.T) {
 	require.Equal(t, int64(66), summary.TotalTokens)
 	require.Equal(t, int64(1), summary.ActiveDepartments)
 	require.Equal(t, int64(1), summary.ActiveUsers)
+	// The reconciliation fields always describe the non-department side: the
+	// two non-department groups plus ungrouped usage.
+	require.Equal(t, int64(3), summary.OtherGroupRequests)
+	require.Equal(t, int64(4500), summary.OtherGroupTokens)
+	require.Equal(t, int64(2), summary.OtherGroupCount)
+	require.Equal(t, int64(1), summary.OtherGroupUsers)
 
 	clients, err := repo.GetClientSoftwareStatsWithFilters(ctx, start, end, usagestats.UsageLogFilters{}, 5)
 	require.NoError(t, err)
@@ -124,6 +144,36 @@ func TestUsageLog_DepartmentReportQueries(t *testing.T) {
 		heatmapTokens += point.TotalTokens
 	}
 	require.Equal(t, int64(66), heatmapTokens)
+
+	// The "other" scope mirrors the team report for everything that is not a
+	// department: standard groups, non-exclusive plan groups, and ungrouped
+	// usage.
+	otherScope := usagestats.UsageLogFilters{DepartmentScope: usagestats.DepartmentGroupScopeOther}
+	otherBreakdown, err := repo.GetGroupUsageBreakdownWithFilters(ctx, start, end, otherScope)
+	require.NoError(t, err)
+	require.Len(t, otherBreakdown, 3)
+	rowsByGroup := map[int64]usagestats.GroupUsageBreakdown{}
+	for _, row := range otherBreakdown {
+		rowsByGroup[row.GroupID] = row
+	}
+	require.Equal(t, int64(2000), rowsByGroup[freeGroup.ID].TotalTokens)
+	require.Equal(t, int64(2000), rowsByGroup[planGroup.ID].TotalTokens)
+	require.Equal(t, int64(1), rowsByGroup[0].Requests)
+	require.Equal(t, int64(500), rowsByGroup[0].TotalTokens)
+
+	otherModels, err := repo.GetDepartmentModelStatsWithFilters(ctx, start, end, otherScope, 5)
+	require.NoError(t, err)
+	require.Len(t, otherModels, 1)
+	require.Equal(t, "gpt-5.6-luna", otherModels[0].Model)
+	require.Equal(t, int64(3), otherModels[0].Requests)
+	require.Equal(t, int64(4500), otherModels[0].TotalTokens)
+
+	otherSummary, err := repo.GetDepartmentUsageSummaryWithFilters(ctx, start, end, otherScope)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), otherSummary.TotalRequests)
+	require.Equal(t, int64(4500), otherSummary.TotalTokens)
+	require.Equal(t, int64(2), otherSummary.ActiveDepartments)
+	require.Equal(t, int64(1), otherSummary.ActiveUsers)
 
 	groups, err := repo.ListDepartmentGroups(ctx)
 	require.NoError(t, err)

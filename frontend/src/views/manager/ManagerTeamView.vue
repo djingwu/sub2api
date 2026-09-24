@@ -19,6 +19,7 @@
       </template>
 
       <template #table>
+       <div class="table-wrapper p-4 sm:p-6">
         <div v-if="loading && members.length === 0" class="flex justify-center py-12">
           <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
         </div>
@@ -157,14 +158,18 @@
             </div>
           </div>
 
-          <Pagination
-            :page="page"
-            :page-size="pageSize"
-            :total="total"
-            @update:page="handlePageChange"
-            @update:pageSize="handlePageSizeChange"
-          />
         </div>
+       </div>
+      </template>
+
+      <template #pagination>
+        <Pagination
+          :page="page"
+          :page-size="pageSize"
+          :total="total"
+          @update:page="handlePageChange"
+          @update:pageSize="handlePageSizeChange"
+        />
       </template>
     </TablePageLayout>
 

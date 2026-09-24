@@ -791,6 +791,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/ops', label: t('nav.ops'), icon: ChartIcon, featureFlag: flagOpsMonitoring },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
     { path: '/admin/manager-scopes', label: t('nav.managerScopes'), icon: UsersIcon, hideInSimpleMode: true },
+    { path: '/admin/saturation', label: t('nav.saturation'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon },
     {
       path: '/admin/channels',

@@ -49,6 +49,7 @@ const props = defineProps<{
   previousSummary: DepartmentUsageSummary | null
   previousRangeLabel?: string
   coverageHint?: string
+  activeLabel?: string
   loading?: boolean
 }>()
 
@@ -96,7 +97,7 @@ const cards = computed<KpiCard[]>(() => {
     },
     {
       key: 'departments',
-      label: t('departmentUsage.kpiActiveDepartments'),
+      label: props.activeLabel || t('departmentUsage.kpiActiveDepartments'),
       icon: 'grid',
       value: formatNumber(current?.active_departments || 0),
       delta: deltaOf(current?.active_departments || 0, previous?.active_departments),

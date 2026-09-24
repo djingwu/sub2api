@@ -55,6 +55,7 @@ type Handlers struct {
 	Redeem           *RedeemHandler
 	Subscription     *SubscriptionHandler
 	Manager          *ManagerHandler
+	Saturation       *SaturationHandler
 	Announcement     *AnnouncementHandler
 	ChannelMonitor   *ChannelMonitorUserHandler
 	ChannelMonitorV2 *ChannelMonitorV2Handler

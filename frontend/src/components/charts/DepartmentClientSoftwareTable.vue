@@ -29,7 +29,7 @@
               {{ t('departmentUsage.activeUsers') }}
             </th>
             <th class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400 sm:px-6">
-              {{ t('departmentUsage.departmentsUsing') }}
+              {{ usingLabel || t('departmentUsage.departmentsUsing') }}
             </th>
           </tr>
         </thead>
@@ -98,6 +98,7 @@ const props = defineProps<{
   clients: ClientSoftwareStat[]
   loading?: boolean
   emptyText: string
+  usingLabel?: string
 }>()
 
 const rows = computed(() => {

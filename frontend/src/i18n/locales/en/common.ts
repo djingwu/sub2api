@@ -217,6 +217,7 @@ export default {
     auditLogs: 'Audit Logs',
     managerTeam: 'Department Team',
     managerScopes: 'Manager Scopes',
+    saturation: 'User Saturation',
   },
 
   // Manager

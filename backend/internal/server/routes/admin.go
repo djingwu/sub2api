@@ -43,6 +43,9 @@ func RegisterAdminRoutes(
 		// 部门经理范围配置
 		registerManagerScopeRoutes(admin, h)
 
+		// 用户用量饱和度
+		registerSaturationRoutes(admin, h)
+
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
@@ -144,6 +147,17 @@ func registerManagerScopeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		scopes.GET("/managers", h.Admin.ManagerScope.ListManagers)
 		scopes.GET("/managers/:manager_id/departments", h.Admin.ManagerScope.ListManagerDepartments)
 		scopes.PUT("/managers/:manager_id/departments", h.Admin.ManagerScope.ReplaceManagerDepartments)
+	}
+}
+
+func registerSaturationRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	saturation := admin.Group("/saturation")
+	{
+		saturation.GET("", h.Saturation.Snapshot)
+		saturation.GET("/users", h.Saturation.Users)
+		saturation.GET("/trend", h.Saturation.Trend)
+		saturation.GET("/config", h.Saturation.GetConfig)
+		saturation.PUT("/config", h.Saturation.UpdateConfig)
 	}
 }
 

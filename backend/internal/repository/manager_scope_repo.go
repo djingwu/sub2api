@@ -19,6 +19,9 @@ type managerScopeRepository struct {
 // managerDeptTreeCTE 递归展开经理负责的部门及其所有子孙部门。
 // 从 user_manager_departments 出发，沿 dingtalk_departments.parent_id 向下遍历。
 // WHERE d.dept_id <> d.parent_id 防止自引用死循环，PostgreSQL 递归上限兜底。
+//
+// 同时展开 manager_dept_groups CTE：把经理管辖的 dept_id 经
+// dingtalk_dept_group_map 映射成订阅分组名，供订阅分组口径复用。
 const managerDeptTreeCTE = `
 WITH RECURSIVE dept_tree AS (
 	SELECT dept_id
@@ -29,18 +32,44 @@ WITH RECURSIVE dept_tree AS (
 	FROM dingtalk_departments d
 	JOIN dept_tree dt ON d.parent_id = dt.dept_id
 	WHERE d.dept_id <> d.parent_id
+),
+manager_dept_groups AS (
+	SELECT DISTINCT m.gname AS group_name
+	FROM user_manager_departments umd
+	JOIN (
+		SELECT (kv).key::bigint AS dept_id, (kv).value AS gname
+		FROM settings s, LATERAL jsonb_each_text(s.value::jsonb) AS kv
+		WHERE s.key = 'dingtalk_dept_group_map'
+		  AND s.value IS JSON
+	) m ON m.dept_id = umd.dept_id
+	WHERE umd.manager_user_id = $1
 )`
 
-// managerScopeUserWhere 是经理可见成员的统一过滤条件：
-// 用户主部门命中该经理负责的部门（含子孙部门），且用户至少有一条未删除的订阅记录。
-// 注意：调用方需先拼接 managerDeptTreeCTE，本片段依赖 dept_tree CTE。
+// managerScopeUserWhere 是经理可见成员的统一过滤条件（两条口径取并集）：
+//
+//  1. 主部门口径：用户 primary_dept_id 命中该经理负责的部门（含子孙部门）；
+//  2. 订阅分组口径：用户持有一条订阅，其分组名落在经理管辖部门映射出的
+//     订阅分组集合里——primary_dept_id 缺失/越界的用户也能被看到。
+//
+// 两种口径都要求用户未删除且至少有一条未删除订阅。
+// 注意：调用方需先拼接 managerDeptTreeCTE，本片段依赖 dept_tree/manager_dept_groups CTE。
 const managerScopeUserWhere = `
 	FROM users AS u
-	JOIN dept_tree dt ON dt.dept_id = u.primary_dept_id
 	WHERE u.deleted_at IS NULL
 	  AND EXISTS (
 		  SELECT 1 FROM user_subscriptions AS us
 		  WHERE us.user_id = u.id AND us.deleted_at IS NULL
+	  )
+	  AND (
+		u.primary_dept_id IN (SELECT dept_id FROM dept_tree)
+		OR EXISTS (
+			SELECT 1
+			FROM user_subscriptions AS us2
+			JOIN groups AS g ON g.id = us2.group_id AND g.deleted_at IS NULL
+			WHERE us2.user_id = u.id
+			  AND us2.deleted_at IS NULL
+			  AND g.name IN (SELECT group_name FROM manager_dept_groups)
+		)
 	  )`
 
 func NewManagerScopeRepository(sqlDB *sql.DB) service.ManagerScopeRepository {
@@ -169,14 +198,8 @@ func (r *managerScopeRepository) IsUserInManagerScope(ctx context.Context, manag
 	rows, err := r.sql.QueryContext(ctx, managerDeptTreeCTE+`
 		SELECT EXISTS (
 			SELECT 1
-			FROM users AS u
-			JOIN dept_tree dt ON dt.dept_id = u.primary_dept_id
-			WHERE u.id = $2
-			  AND u.deleted_at IS NULL
-			  AND EXISTS (
-				  SELECT 1 FROM user_subscriptions AS us
-				  WHERE us.user_id = u.id AND us.deleted_at IS NULL
-			  )
+			`+managerScopeUserWhere+`
+			  AND u.id = $2
 		)`, managerUserID, userID)
 	if err != nil {
 		return false, err

@@ -154,8 +154,6 @@ func TestReplaceManagerDepartments_AcceptsManager(t *testing.T) {
 	}
 }
 
-
-
 func TestListMemberSubscriptions_ChecksScopeBeforeQuery(t *testing.T) {
 	svc, _ := newTestManagerService(false)
 	_, err := svc.ListMemberSubscriptions(context.Background(), 1, 2)

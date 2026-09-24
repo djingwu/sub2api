@@ -557,6 +557,73 @@ func TestDepartmentModelStatsReturnsModelsWithoutCosts(t *testing.T) {
 	require.Equal(t, int64(3), envelope.Data.Models[0].UserCount)
 }
 
+func departmentUsageScopeRouter(repo *userUsageRepoCapture) *gin.Engine {
+	usageSvc := service.NewUsageService(repo, nil, nil, nil)
+	usageHandler := NewUsageHandler(usageSvc, nil, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+		c.Next()
+	})
+	router.GET("/usage/department-usage", usageHandler.DepartmentUsage)
+	router.GET("/usage/department-usage/reasoning", usageHandler.DepartmentReasoningEffort)
+	return router
+}
+
+func TestDepartmentUsageScopeSelectsGroupSet(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := departmentUsageScopeRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/department-usage?start_date=2026-09-01&end_date=2026-09-07&scope=other", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, usagestats.DepartmentGroupScopeOther, repo.departmentBreakdownFilters.DepartmentScope)
+	require.Equal(t, usagestats.DepartmentGroupScopeOther, repo.departmentSummaryFilters.DepartmentScope)
+	require.False(t, repo.departmentGroupsFetched, "the other scope has no department coverage directory")
+	require.Contains(t, rec.Body.String(), `"scope":"other"`)
+
+	req = httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07&scope=other", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, usagestats.DepartmentGroupScopeOther, repo.departmentReasoningGroupFilters.DepartmentScope)
+
+	// The default scope stays on real departments.
+	req = httptest.NewRequest(http.MethodGet, "/usage/department-usage?start_date=2026-09-01&end_date=2026-09-07", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, usagestats.DepartmentGroupScopeDepartment, repo.departmentBreakdownFilters.DepartmentScope)
+	require.Equal(t, usagestats.DepartmentGroupScopeDepartment, repo.departmentSummaryFilters.DepartmentScope)
+	require.True(t, repo.departmentGroupsFetched)
+	require.Contains(t, rec.Body.String(), `"scope":"department"`)
+
+	req = httptest.NewRequest(http.MethodGet, "/usage/department-usage/reasoning?start_date=2026-09-01&end_date=2026-09-07", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, usagestats.DepartmentGroupScopeDepartment, repo.departmentReasoningGroupFilters.DepartmentScope)
+}
+
+func TestDepartmentUsageRejectsInvalidScope(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := departmentUsageScopeRouter(repo)
+
+	for _, path := range []string{"/usage/department-usage", "/usage/department-usage/reasoning"} {
+		req := httptest.NewRequest(http.MethodGet, path+"?start_date=2026-09-01&end_date=2026-09-07&scope=weird", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code, path)
+	}
+}
+
 func TestDepartmentUsageRejectsUnauthenticatedAccess(t *testing.T) {
 	repo := &userUsageRepoCapture{}
 	usageSvc := service.NewUsageService(repo, nil, nil, nil)

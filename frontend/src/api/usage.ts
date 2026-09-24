@@ -159,7 +159,18 @@ export interface DepartmentUsageSummary {
   active_departments: number
   active_users: number
   total_departments: number
+  other_group_requests: number
+  other_group_tokens: number
+  other_group_count: number
+  other_group_users: number
 }
+
+/**
+ * Group scope for the team usage report. 'department' keeps only real
+ * departments (active exclusive subscription groups); 'other' switches to
+ * non-department groups such as 免费组/cline plus ungrouped usage.
+ */
+export type DepartmentUsageScope = 'department' | 'other'
 
 export interface ClientSoftwareStat {
   client_software: string
@@ -447,6 +458,7 @@ export async function getDashboardSnapshotV2(
 export async function getDepartmentUsage(params: {
   start_date: string
   end_date: string
+  scope?: DepartmentUsageScope
 }): Promise<DepartmentUsageResponse> {
   const { data } = await apiClient.get<DepartmentUsageResponse>('/usage/department-usage', { params })
   return data
@@ -460,6 +472,7 @@ export async function getDepartmentUsageHeatmap(params: {
   start_date: string
   end_date: string
   timezone?: string
+  scope?: DepartmentUsageScope
 }): Promise<DepartmentUsageHeatmapResponse> {
   const { data } = await apiClient.get<DepartmentUsageHeatmapResponse>(
     '/usage/department-usage/heatmap',
@@ -478,6 +491,7 @@ export async function getDepartmentClientSoftware(params: {
   end_date: string
   group_id?: number
   limit?: number
+  scope?: DepartmentUsageScope
 }): Promise<DepartmentClientSoftwareResponse> {
   const { data } = await apiClient.get<DepartmentClientSoftwareResponse>(
     '/usage/department-usage/client-software',
@@ -494,6 +508,7 @@ export async function getDepartmentModelStats(params: {
   start_date: string
   end_date: string
   limit?: number
+  scope?: DepartmentUsageScope
 }): Promise<DepartmentModelStatsResponse> {
   const { data } = await apiClient.get<DepartmentModelStatsResponse>(
     '/usage/department-usage/models',
@@ -515,6 +530,7 @@ export async function getDepartmentReasoningEffort(params: {
   group_id?: number
   model?: string
   granularity?: DepartmentTrendGranularity
+  scope?: DepartmentUsageScope
 }): Promise<DepartmentReasoningEffortResponse> {
   const { data } = await apiClient.get<DepartmentReasoningEffortResponse>(
     '/usage/department-usage/reasoning',

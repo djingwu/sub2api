@@ -15,26 +15,34 @@ const departmentTopModelLimit = 5
 // heatmap all count "usage" the same way.
 const departmentTokenSum = "COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0)"
 
-// departmentGroupScopeCondition keeps team-facing aggregates limited to real
-// departments: active, non-deleted, exclusive DingTalk subscription groups.
-// Standard groups such as 免费组 or cline and non-exclusive plan groups such as
-// the fixed $200 subscription group are not departments, so their usage never
-// shows up as a team row. The caller supplies the group_id column reference.
-const departmentGroupScopeCondition = `%s IN (
-			SELECT g.id
+// departmentGroupSubquery selects the real departments: active, non-deleted,
+// exclusive DingTalk subscription groups. Standard groups such as 免费组 or
+// cline and non-exclusive plan groups such as the fixed $200 subscription group
+// are not departments.
+const departmentGroupSubquery = `SELECT g.id
 			FROM groups g
 			WHERE g.deleted_at IS NULL
 			  AND g.status = 'active'
 			  AND g.subscription_type = 'subscription'
-			  AND g.is_exclusive = TRUE
-		)`
+			  AND g.is_exclusive = TRUE`
 
-// appendDepartmentUsageFilterConditions applies the shared usage filter shape to
-// an analytics query and restricts it to department groups (see
-// departmentGroupScopeCondition). Callers that serve team-facing aggregates pass
-// an empty business filter set on purpose: accepting user/api-key/group filters
-// there would let a member narrow the result to another team's data.
-func appendDepartmentUsageFilterConditions(query string, args []any, alias string, filters usagestats.UsageLogFilters) (string, []any) {
+// departmentGroupPredicate returns the group-scope predicate for a team report.
+// The department scope matches only real departments; the other scope matches
+// everything else, including usage that has no group (未分组). The other scope
+// COALESCEs the column to 0 because NOT IN would otherwise drop NULL rows.
+func departmentGroupPredicate(column, scope string) string {
+	if scope == usagestats.DepartmentGroupScopeOther {
+		return fmt.Sprintf("COALESCE(%s, 0) NOT IN (%s)", column, departmentGroupSubquery)
+	}
+	return fmt.Sprintf("%s IN (%s)", column, departmentGroupSubquery)
+}
+
+// appendDepartmentUsageBusinessFilters applies the shared usage filter shape to
+// an analytics query without the group scope. Callers that serve team-facing
+// aggregates pass an empty business filter set on purpose: accepting
+// user/api-key/group filters there would let a member narrow the result to
+// another team's data.
+func appendDepartmentUsageBusinessFilters(query string, args []any, alias string, filters usagestats.UsageLogFilters) (string, []any) {
 	column := func(name string) string {
 		if alias == "" {
 			return name
@@ -68,7 +76,18 @@ func appendDepartmentUsageFilterConditions(query string, args []any, alias strin
 	if filters.UpstreamModelMismatch != nil {
 		query += " AND " + upstreamModelMismatchCondition(column("upstream_model_mismatch"), *filters.UpstreamModelMismatch)
 	}
-	query += fmt.Sprintf(" AND "+departmentGroupScopeCondition, column("group_id"))
+	return query, args
+}
+
+// appendDepartmentUsageFilterConditions applies the business filters plus the
+// group scope selected by filters.DepartmentScope.
+func appendDepartmentUsageFilterConditions(query string, args []any, alias string, filters usagestats.UsageLogFilters) (string, []any) {
+	query, args = appendDepartmentUsageBusinessFilters(query, args, alias, filters)
+	groupColumn := "group_id"
+	if alias != "" {
+		groupColumn = alias + ".group_id"
+	}
+	query += " AND " + departmentGroupPredicate(groupColumn, filters.DepartmentScope)
 	return query, args
 }
 
@@ -491,21 +510,36 @@ func (r *usageLogRepository) GetDepartmentModelStatsWithFilters(ctx context.Cont
 }
 
 // GetDepartmentUsageSummaryWithFilters returns the cost-free headline totals for
-// the selected range. ActiveUsers is a distinct-user count across all
-// departments, so it never double counts someone active in two teams.
+// the selected range. One pass computes both the department side and the
+// non-department side so the caller can reconcile "all usage" against the
+// department table. ActiveUsers is a distinct-user count within the scope, so it
+// never double counts someone active in two groups.
 func (r *usageLogRepository) GetDepartmentUsageSummaryWithFilters(ctx context.Context, startTime, endTime time.Time, filters usagestats.UsageLogFilters) (*usagestats.DepartmentUsageSummary, error) {
+	groupColumn := "ul.group_id"
+	departmentPredicate := departmentGroupPredicate(groupColumn, usagestats.DepartmentGroupScopeDepartment)
+	otherPredicate := departmentGroupPredicate(groupColumn, usagestats.DepartmentGroupScopeOther)
+
 	query := fmt.Sprintf(`
 		SELECT
-			COUNT(*) AS total_requests,
-			%s AS total_tokens,
-			COUNT(DISTINCT COALESCE(ul.group_id, 0)) AS active_departments,
-			COUNT(DISTINCT ul.user_id) AS active_users
+			COUNT(*) FILTER (WHERE %[1]s) AS department_requests,
+			%[4]s FILTER (WHERE %[1]s) AS department_tokens,
+			COUNT(DISTINCT %[2]s) FILTER (WHERE %[1]s) AS department_groups,
+			COUNT(DISTINCT ul.user_id) FILTER (WHERE %[1]s) AS department_users,
+			COUNT(*) FILTER (WHERE %[3]s) AS other_requests,
+			%[4]s FILTER (WHERE %[3]s) AS other_tokens,
+			COUNT(DISTINCT %[2]s) FILTER (WHERE %[3]s) AS other_groups,
+			COUNT(DISTINCT ul.user_id) FILTER (WHERE %[3]s) AS other_users
 		FROM usage_logs ul
 		WHERE ul.created_at >= $1 AND ul.created_at < $2
-	`, departmentTokenSum)
+	`,
+		departmentPredicate,
+		groupColumn,
+		otherPredicate,
+		"COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0)",
+	)
 
 	args := []any{startTime, endTime}
-	query, args = appendDepartmentUsageFilterConditions(query, args, "ul", filters)
+	query, args = appendDepartmentUsageBusinessFilters(query, args, "ul", filters)
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -524,16 +558,32 @@ func (r *usageLogRepository) GetDepartmentUsageSummaryWithFilters(ctx context.Co
 		}
 		return &summary, nil
 	}
+	var departmentRequests, departmentTokens, departmentGroups, departmentUsers int64
 	if err := rows.Scan(
-		&summary.TotalRequests,
-		&summary.TotalTokens,
-		&summary.ActiveDepartments,
-		&summary.ActiveUsers,
+		&departmentRequests,
+		&departmentTokens,
+		&departmentGroups,
+		&departmentUsers,
+		&summary.OtherGroupRequests,
+		&summary.OtherGroupTokens,
+		&summary.OtherGroupCount,
+		&summary.OtherGroupUsers,
 	); err != nil {
 		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if filters.DepartmentScope == usagestats.DepartmentGroupScopeOther {
+		summary.TotalRequests = summary.OtherGroupRequests
+		summary.TotalTokens = summary.OtherGroupTokens
+		summary.ActiveDepartments = summary.OtherGroupCount
+		summary.ActiveUsers = summary.OtherGroupUsers
+	} else {
+		summary.TotalRequests = departmentRequests
+		summary.TotalTokens = departmentTokens
+		summary.ActiveDepartments = departmentGroups
+		summary.ActiveUsers = departmentUsers
 	}
 	return &summary, nil
 }

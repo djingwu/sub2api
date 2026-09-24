@@ -240,21 +240,39 @@ type DepartmentModelStat struct {
 	UserCount   int64  `json:"user_count"`
 }
 
+// DepartmentGroupScopeDepartment restricts a team report to real departments
+// (active, exclusive DingTalk subscription groups). It is the default scope.
+const DepartmentGroupScopeDepartment = "department"
+
+// DepartmentGroupScopeOther restricts a team report to everything that is not a
+// department: standard groups such as 免费组/cline, non-exclusive plan groups,
+// and usage without a group (未分组).
+const DepartmentGroupScopeOther = "other"
+
 // DepartmentUsageSummary is the cost-free team-wide headline aggregate for the
-// selected range. ActiveUsers counts distinct users across every department.
-// TotalDepartments is the number of adoption-candidate groups; it is filled by
-// the handler from the group directory, not by the aggregate query.
+// selected range. Total* fields always describe the current group scope;
+// OtherGroup* fields always describe the non-department counterpart so the
+// department view can reconcile "all usage" against the department table.
+// ActiveUsers counts distinct users across the scope, so it never double counts
+// someone active in two groups. TotalDepartments is the number of real
+// departments; it is filled by the handler from the group directory, not by the
+// aggregate query.
 type DepartmentUsageSummary struct {
 	TotalRequests     int64 `json:"total_requests"`
 	TotalTokens       int64 `json:"total_tokens"`
 	ActiveDepartments int64 `json:"active_departments"`
 	ActiveUsers       int64 `json:"active_users"`
 	TotalDepartments  int64 `json:"total_departments"`
+
+	OtherGroupRequests int64 `json:"other_group_requests"`
+	OtherGroupTokens   int64 `json:"other_group_tokens"`
+	OtherGroupCount    int64 `json:"other_group_count"`
+	OtherGroupUsers    int64 `json:"other_group_users"`
 }
 
-// UnusedDepartment is an adoption-candidate group (active, non-exclusive) that
-// had no usage in the selected range. It powers adoption coverage on the team
-// usage report and keeps anonymous department codes stable across ranges.
+// UnusedDepartment is a real department (active, exclusive DingTalk
+// subscription group) that had no usage in the selected range. It powers
+// adoption coverage on the team usage report.
 type UnusedDepartment struct {
 	GroupID   int64  `json:"group_id"`
 	GroupName string `json:"group_name"`
@@ -412,6 +430,11 @@ type UsageLogFilters struct {
 	UpstreamModelMismatch *bool
 	StartTime             *time.Time
 	EndTime               *time.Time
+	// DepartmentScope selects the group scope for team-facing reports. Empty
+	// means DepartmentGroupScopeDepartment; DepartmentGroupScopeOther switches
+	// to non-department groups plus ungrouped usage. It is ignored by
+	// user-facing queries.
+	DepartmentScope string
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

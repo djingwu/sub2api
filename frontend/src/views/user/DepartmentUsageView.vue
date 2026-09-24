@@ -9,10 +9,10 @@
             {{ t('departmentUsage.badge') }}
           </div>
           <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white md:text-3xl">
-            {{ t('departmentUsage.title') }}
+            {{ pageTitle }}
           </h1>
           <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
-            {{ t('departmentUsage.description') }}
+            {{ pageDescription }}
           </p>
         </div>
       </section>
@@ -28,6 +28,24 @@
           v-model:end-date="endDate"
           @change="loadUsage"
         />
+        <div class="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm font-medium transition-colors"
+            :class="!isOtherScope ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-dark-300 dark:hover:bg-dark-800'"
+            @click="setScope('department')"
+          >
+            {{ t('departmentUsage.scopeDepartment') }}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm font-medium transition-colors"
+            :class="isOtherScope ? 'bg-primary-500 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-dark-300 dark:hover:bg-dark-800'"
+            @click="setScope('other')"
+          >
+            {{ t('departmentUsage.scopeOther') }}
+          </button>
+        </div>
         <button
           type="button"
           class="btn btn-secondary"
@@ -45,15 +63,29 @@
         :previous-summary="previousSummary"
         :previous-range-label="previousRangeLabel"
         :coverage-hint="coverageHint"
+        :active-label="activeGroupsLabel"
         :loading="loading"
       />
 
-      <DepartmentInsights :insights="insights" :loading="loading || clientSoftwareLoading" />
+      <div
+        v-if="otherGroupLine"
+        class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-3 text-sm text-gray-500 shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:text-dark-400"
+      >
+        <span class="inline-flex items-center gap-2">
+          <Icon name="infoCircle" size="sm" class="text-primary-500" />
+          {{ otherGroupLine }}
+        </span>
+        <button type="button" class="btn btn-secondary" @click="setScope('other')">
+          {{ t('departmentUsage.viewOtherGroups') }}
+        </button>
+      </div>
+
+      <DepartmentInsights v-if="!isOtherScope" :insights="insights" :loading="loading || clientSoftwareLoading" />
 
       <section class="card overflow-hidden">
         <div class="flex flex-col gap-2 border-b border-gray-200 px-5 py-5 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.tableTitle') }}</h2>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ tableTitle }}</h2>
             <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">{{ rangeLabel }}</p>
           </div>
           <span class="text-xs text-gray-400 dark:text-dark-500">{{ t('departmentUsage.tokenOnlyNote') }}</span>
@@ -84,7 +116,7 @@
                     :title="t('departmentUsage.sortLabel')"
                     @click="toggleSort('name')"
                   >
-                    {{ t('departmentUsage.department') }}
+                    {{ groupColumnLabel }}
                     <Icon v-if="sortKey === 'name'" :name="sortDirection === 'asc' ? 'arrowUp' : 'arrowDown'" size="sm" />
                   </button>
                 </th>
@@ -212,14 +244,14 @@
                     <div
                       v-if="department.intensityRatio"
                       class="mt-0.5 text-[11px] text-gray-400 dark:text-dark-500"
-                      :title="t('departmentUsage.intensityVsTeam', { ratio: department.intensityRatio.toFixed(1) })"
+                      :title="intensityTitle(department)"
                     >
                       ×{{ department.intensityRatio.toFixed(1) }}
                     </div>
                   </td>
                   <td
                     class="px-5 py-4 text-right text-sm tabular-nums text-gray-700 dark:text-dark-200"
-                    :title="teamCacheHitRate > 0 ? t('departmentUsage.teamAverageCacheRate', { value: `${(teamCacheHitRate * 100).toFixed(1)}%` }) : undefined"
+                    :title="averageCacheRateTitle"
                   >
                     {{ cacheHitRate(department) }}
                   </td>
@@ -319,7 +351,7 @@
         </div>
 
         <div
-          v-if="!loading && unusedDepartments.length > 0"
+          v-if="!isOtherScope && !loading && unusedDepartments.length > 0"
           class="border-t border-gray-200 px-5 py-4 dark:border-dark-700 sm:px-6"
         >
           <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
@@ -345,7 +377,7 @@
           <div class="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.rankingTitle') }}</h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.rankingDescription') }}</p>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ rankingDescription }}</p>
             </div>
           </div>
 
@@ -379,13 +411,13 @@
             <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.clientSoftwareDescription') }}</p>
           </div>
           <label class="flex flex-none items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
-            {{ t('departmentUsage.reasoningScopeLabel') }}
+            {{ reasoningScopeLabel }}
             <select
               v-model.number="clientSoftwareGroupID"
               class="input w-40 py-1 text-xs"
               @change="changeClientSoftwareGroup"
             >
-              <option :value="0">{{ t('departmentUsage.allDepartments') }}</option>
+              <option :value="0">{{ clientAllGroupsLabel }}</option>
               <option v-for="department in sortedDepartments" :key="department.group_id" :value="department.group_id">
                 {{ department.group_name || t('departmentUsage.unassigned') }}
               </option>
@@ -397,6 +429,7 @@
           :clients="clientSoftwareData"
           :loading="clientSoftwareLoading"
           :empty-text="t('departmentUsage.clientSoftwareEmpty')"
+          :using-label="usingLabel"
         />
       </section>
 
@@ -428,7 +461,7 @@
         <div class="card flex items-center justify-between gap-4 p-6">
           <div>
             <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('departmentUsage.reasoningTitle') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('departmentUsage.reasoningDescription') }}</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ reasoningSectionDescription }}</p>
           </div>
           <button
             type="button"
@@ -447,9 +480,9 @@
           <div class="card flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-end">
             <div class="flex flex-wrap items-center gap-3">
               <label class="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400">
-                {{ t('departmentUsage.reasoningScopeLabel') }}
+                {{ reasoningScopeLabel }}
                 <select v-model.number="reasoningGroupID" class="input w-40 py-1 text-xs" @change="loadReasoning">
-                  <option :value="0">{{ t('departmentUsage.reasoningGroupAll') }}</option>
+                  <option :value="0">{{ reasoningGroupAllLabel }}</option>
                   <option v-for="department in sortedDepartments" :key="department.group_id" :value="department.group_id">
                     {{ department.group_name || t('departmentUsage.unassigned') }}
                   </option>
@@ -524,6 +557,7 @@ import {
   type DepartmentModelStat,
   type DepartmentReasoningEffortRow,
   type DepartmentUsageHeatmapPoint,
+  type DepartmentUsageScope,
   type DepartmentUsageStat,
   type DepartmentUsageSummary,
   type UnusedDepartment
@@ -539,6 +573,8 @@ const appStore = useAppStore()
 const today = new Date()
 const startDate = ref(formatDateLocalInput(new Date(today.getTime() - 29 * 86400000)))
 const endDate = ref(formatDateLocalInput(today))
+const scope = ref<DepartmentUsageScope>('department')
+const isOtherScope = computed(() => scope.value === 'other')
 const departments = ref<DepartmentUsageStat[]>([])
 const summary = ref<DepartmentUsageSummary | null>(null)
 const unusedDepartments = ref<UnusedDepartment[]>([])
@@ -608,19 +644,86 @@ const reasoningModelOptions = computed<string[]>(() => {
   return [...names].sort((a, b) => a.localeCompare(b))
 })
 
-const reasoningDepartmentsTitle = computed(() =>
-  reasoningModel.value
+const reasoningDepartmentsTitle = computed(() => {
+  if (isOtherScope.value) {
+    return reasoningModel.value
+      ? t('departmentUsage.reasoningDepartmentsTitleForModelOther', { model: reasoningModel.value })
+      : t('departmentUsage.reasoningDepartmentsTitleOther')
+  }
+  return reasoningModel.value
     ? t('departmentUsage.reasoningDepartmentsTitleForModel', { model: reasoningModel.value })
     : t('departmentUsage.reasoningDepartmentsTitle')
-)
+})
 
-const reasoningDepartmentsDescription = computed(() =>
-  reasoningModel.value
+const reasoningDepartmentsDescription = computed(() => {
+  if (isOtherScope.value) {
+    return reasoningModel.value
+      ? t('departmentUsage.reasoningDepartmentsDescriptionForModelOther', { model: reasoningModel.value })
+      : t('departmentUsage.reasoningDepartmentsDescriptionOther')
+  }
+  return reasoningModel.value
     ? t('departmentUsage.reasoningDepartmentsDescriptionForModel', { model: reasoningModel.value })
     : t('departmentUsage.reasoningDepartmentsDescription')
+})
+
+const reasoningSectionDescription = computed(() =>
+  isOtherScope.value ? t('departmentUsage.reasoningDescriptionOther') : t('departmentUsage.reasoningDescription')
 )
 
 const rangeLabel = computed(() => `${startDate.value} - ${endDate.value}`)
+
+const pageTitle = computed(() =>
+  isOtherScope.value ? t('departmentUsage.otherTitle') : t('departmentUsage.title')
+)
+
+const pageDescription = computed(() =>
+  isOtherScope.value ? t('departmentUsage.otherDescription') : t('departmentUsage.description')
+)
+
+const tableTitle = computed(() =>
+  isOtherScope.value ? t('departmentUsage.tableTitleOther') : t('departmentUsage.tableTitle')
+)
+
+const groupColumnLabel = computed(() =>
+  isOtherScope.value ? t('departmentUsage.group') : t('departmentUsage.department')
+)
+
+const rankingDescription = computed(() =>
+  isOtherScope.value ? t('departmentUsage.rankingDescriptionOther') : t('departmentUsage.rankingDescription')
+)
+
+// KPI and filter labels switch from "department" to "group" in the other view.
+const activeGroupsLabel = computed(() =>
+  isOtherScope.value ? t('departmentUsage.kpiActiveGroups') : undefined
+)
+
+const usingLabel = computed(() =>
+  isOtherScope.value ? t('departmentUsage.groupsUsing') : undefined
+)
+
+const reasoningScopeLabel = computed(() =>
+  isOtherScope.value ? t('departmentUsage.reasoningScopeLabelOther') : t('departmentUsage.reasoningScopeLabel')
+)
+
+const reasoningGroupAllLabel = computed(() =>
+  isOtherScope.value ? t('departmentUsage.reasoningGroupAllOther') : t('departmentUsage.reasoningGroupAll')
+)
+
+const clientAllGroupsLabel = computed(() =>
+  isOtherScope.value ? t('departmentUsage.allGroups') : t('departmentUsage.allDepartments')
+)
+
+// Reconciliation line under the KPI cards: everything that is not counted in
+// the department table (免费组, cline, 未分组, ...).
+const otherGroupLine = computed<string | undefined>(() => {
+  const current = summary.value
+  if (!current || isOtherScope.value || !current.other_group_requests) return undefined
+  return t('departmentUsage.otherGroupsHint', {
+    count: formatNumber(current.other_group_count),
+    requests: formatNumber(current.other_group_requests),
+    tokens: formatCompactNumber(current.other_group_tokens)
+  })
+})
 
 type SortKey = 'name' | 'tokens' | 'requests' | 'perCapita'
 
@@ -682,7 +785,7 @@ const coveragePercent = computed<number | null>(() => {
 })
 
 const coverageHint = computed<string | undefined>(() =>
-  coveragePercent.value === null
+  coveragePercent.value === null || isOtherScope.value
     ? undefined
     : t('departmentUsage.coverageHint', { percent: coveragePercent.value })
 )
@@ -729,10 +832,29 @@ function teamSharePercent(department: DepartmentUsageStat): number {
 }
 
 function teamShareText(department: DepartmentUsageStat): string {
-  return t('departmentUsage.shareOfTeam', {
+  return t(isOtherScope.value ? 'departmentUsage.shareOfScope' : 'departmentUsage.shareOfTeam', {
     percent: teamSharePercent(department).toFixed(1)
   })
 }
+
+function intensityTitle(department: { intensityRatio: number | null }): string {
+  if (!department.intensityRatio) return ''
+  return t(
+    isOtherScope.value ? 'departmentUsage.intensityVsScope' : 'departmentUsage.intensityVsTeam',
+    { ratio: department.intensityRatio.toFixed(1) }
+  )
+}
+
+const averageCacheRateTitle = computed<string | undefined>(() =>
+  teamCacheHitRate.value > 0
+    ? t(
+        isOtherScope.value
+          ? 'departmentUsage.scopeAverageCacheRate'
+          : 'departmentUsage.teamAverageCacheRate',
+        { value: `${(teamCacheHitRate.value * 100).toFixed(1)}%` }
+      )
+    : undefined
+)
 
 function rankByTokens(list: DepartmentUsageStat[]): Map<number, number> {
   const sorted = [...list]
@@ -811,7 +933,7 @@ function departmentFlags(department: DepartmentUsageStat): DepartmentFlagKey[] {
 function flagLabel(flag: DepartmentFlagKey): string {
   switch (flag) {
     case 'cacheLow':
-      return t('departmentUsage.flagCacheLow')
+      return t(isOtherScope.value ? 'departmentUsage.flagCacheLowScope' : 'departmentUsage.flagCacheLow')
     case 'heavyContext':
       return t('departmentUsage.flagHeavyContext')
     default:
@@ -1016,11 +1138,13 @@ async function loadDepartments() {
     const [current, previous] = await Promise.all([
       getDepartmentUsage({
         start_date: startDate.value,
-        end_date: endDate.value
+        end_date: endDate.value,
+        scope: scope.value
       }),
       getDepartmentUsage({
         start_date: previousStart,
-        end_date: previousEnd
+        end_date: previousEnd,
+        scope: scope.value
       }).catch(() => null)
     ])
     if (sequence === requestSequence) {
@@ -1062,7 +1186,8 @@ async function loadHeatmap() {
     const response = await getDepartmentUsageHeatmap({
       start_date: startDate.value,
       end_date: endDate.value,
-      timezone: resolvedTimezone()
+      timezone: resolvedTimezone(),
+      scope: scope.value
     })
     if (sequence === heatmapSequence) {
       heatmapPoints.value = response.points || []
@@ -1086,7 +1211,8 @@ async function loadClientSoftware() {
       start_date: startDate.value,
       end_date: endDate.value,
       group_id: clientSoftwareGroupID.value || undefined,
-      limit: 10
+      limit: 10,
+      scope: scope.value
     })
     if (sequence === clientSoftwareSequence) {
       clientSoftwareData.value = response.clients || []
@@ -1117,7 +1243,8 @@ async function loadModels() {
     const response = await getDepartmentModelStats({
       start_date: startDate.value,
       end_date: endDate.value,
-      limit: 8
+      limit: 8,
+      scope: scope.value
     })
     if (sequence === modelsSequence) {
       modelStats.value = response.models || []
@@ -1144,7 +1271,8 @@ async function loadReasoning() {
       end_date: endDate.value,
       group_id: reasoningGroupID.value || undefined,
       model: reasoningModel.value || undefined,
-      granularity: 'day'
+      granularity: 'day',
+      scope: scope.value
     })
     if (sequence === reasoningSequence) {
       reasoningDepartments.value = response.departments || []
@@ -1173,6 +1301,16 @@ async function focusReasoningDepartment(groupID: number) {
   await nextTick()
   void loadReasoning()
   reasoningSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function setScope(next: DepartmentUsageScope) {
+  if (scope.value === next) return
+  scope.value = next
+  clientSoftwareGroupID.value = 0
+  reasoningGroupID.value = 0
+  reasoningModel.value = ''
+  expandedGroups.value = []
+  loadUsage()
 }
 
 function loadUsage() {

@@ -489,6 +489,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/saturation',
+    name: 'AdminSaturation',
+    component: () => import('@/views/admin/SaturationView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'User Saturation',
+      titleKey: 'saturation.titleAdmin',
+      descriptionKey: 'saturation.descriptionAdmin'
+    }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),

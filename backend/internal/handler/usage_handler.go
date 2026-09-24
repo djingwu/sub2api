@@ -301,6 +301,36 @@ func derefTime(value *time.Time) time.Time {
 	return *value
 }
 
+// parseDepartmentUsageScope reads the ?scope= query for team-facing reports.
+// The default is the department scope; "other" switches to non-department
+// groups plus ungrouped usage.
+func parseDepartmentUsageScope(c *gin.Context) (string, bool) {
+	switch strings.TrimSpace(c.Query("scope")) {
+	case "", usagestats.DepartmentGroupScopeDepartment:
+		return usagestats.DepartmentGroupScopeDepartment, true
+	case usagestats.DepartmentGroupScopeOther:
+		return usagestats.DepartmentGroupScopeOther, true
+	default:
+		response.BadRequest(c, "Invalid scope, use department or other")
+		return "", false
+	}
+}
+
+// parseDepartmentUsageQuery parses the date range and the group scope shared by
+// every team-facing report endpoint.
+func (h *UsageHandler) parseDepartmentUsageQuery(c *gin.Context) (*userUsageFilters, string, bool) {
+	parsed, ok := h.parseUserUsageDateRange(c, true)
+	if !ok {
+		return nil, "", false
+	}
+	scope, ok := parseDepartmentUsageScope(c)
+	if !ok {
+		return nil, "", false
+	}
+	parsed.Filters.DepartmentScope = scope
+	return parsed, scope, true
+}
+
 // List handles listing usage records with pagination
 // GET /api/v1/usage
 func (h *UsageHandler) List(c *gin.Context) {
@@ -655,7 +685,7 @@ func (h *UsageHandler) DepartmentUsage(c *gin.Context) {
 		return
 	}
 
-	parsed, ok := h.parseUserUsageDateRange(c, true)
+	parsed, scope, ok := h.parseDepartmentUsageQuery(c)
 	if !ok {
 		return
 	}
@@ -716,28 +746,32 @@ func (h *UsageHandler) DepartmentUsage(c *gin.Context) {
 		return
 	}
 
-	// Coverage is derived from the department directory: departments with usage
-	// over all real departments (exclusive DingTalk subscription groups, never
-	// 免费组/cline/plan groups). Departments with no usage in the range are
-	// listed separately so the table stays focused on actual usage.
-	groups, err := h.usageService.ListDepartmentGroups(c.Request.Context())
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	usedGroupIDs := make(map[int64]struct{}, len(breakdown))
-	for _, row := range breakdown {
-		usedGroupIDs[row.GroupID] = struct{}{}
-	}
-	unusedDepartments := make([]usagestats.UnusedDepartment, 0, len(groups))
-	for _, group := range groups {
-		if _, used := usedGroupIDs[group.GroupID]; !used {
-			unusedDepartments = append(unusedDepartments, group)
+	// Coverage is derived from the department directory and only makes sense in
+	// the department scope: departments with usage over all real departments
+	// (exclusive DingTalk subscription groups, never 免费组/cline/plan groups).
+	// Departments with no usage in the range are listed separately so the table
+	// stays focused on actual usage.
+	unusedDepartments := make([]usagestats.UnusedDepartment, 0)
+	if scope == usagestats.DepartmentGroupScopeDepartment {
+		groups, err := h.usageService.ListDepartmentGroups(c.Request.Context())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
 		}
+		usedGroupIDs := make(map[int64]struct{}, len(breakdown))
+		for _, row := range breakdown {
+			usedGroupIDs[row.GroupID] = struct{}{}
+		}
+		for _, group := range groups {
+			if _, used := usedGroupIDs[group.GroupID]; !used {
+				unusedDepartments = append(unusedDepartments, group)
+			}
+		}
+		summary.TotalDepartments = int64(len(groups))
 	}
-	summary.TotalDepartments = int64(len(groups))
 
 	response.Success(c, gin.H{
+		"scope":              scope,
 		"departments":        departments,
 		"summary":            summary,
 		"unused_departments": unusedDepartments,
@@ -754,7 +788,7 @@ func (h *UsageHandler) DepartmentUsageTrend(c *gin.Context) {
 		return
 	}
 
-	parsed, ok := h.parseUserUsageDateRange(c, true)
+	parsed, _, ok := h.parseDepartmentUsageQuery(c)
 	if !ok {
 		return
 	}
@@ -788,7 +822,7 @@ func (h *UsageHandler) DepartmentUsageHeatmap(c *gin.Context) {
 		return
 	}
 
-	parsed, ok := h.parseUserUsageDateRange(c, true)
+	parsed, _, ok := h.parseDepartmentUsageQuery(c)
 	if !ok {
 		return
 	}
@@ -829,7 +863,7 @@ func (h *UsageHandler) DepartmentClientSoftware(c *gin.Context) {
 		return
 	}
 
-	parsed, ok := h.parseUserUsageDateRange(c, true)
+	parsed, _, ok := h.parseDepartmentUsageQuery(c)
 	if !ok {
 		return
 	}
@@ -876,7 +910,7 @@ func (h *UsageHandler) DepartmentModelStats(c *gin.Context) {
 		return
 	}
 
-	parsed, ok := h.parseUserUsageDateRange(c, true)
+	parsed, _, ok := h.parseDepartmentUsageQuery(c)
 	if !ok {
 		return
 	}
@@ -913,7 +947,7 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 		return
 	}
 
-	parsed, ok := h.parseUserUsageDateRange(c, true)
+	parsed, scope, ok := h.parseDepartmentUsageQuery(c)
 	if !ok {
 		return
 	}
@@ -950,6 +984,7 @@ func (h *UsageHandler) DepartmentReasoningEffort(c *gin.Context) {
 		GroupID:           groupID,
 		Model:             model,
 		ModelFilterSource: usagestats.ModelSourceRequested,
+		DepartmentScope:   scope,
 	}
 	granularity := c.DefaultQuery("granularity", "day")
 
