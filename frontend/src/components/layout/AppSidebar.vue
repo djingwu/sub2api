@@ -790,8 +790,18 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
     { path: '/admin/ops', label: t('nav.ops'), icon: ChartIcon, featureFlag: flagOpsMonitoring },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
-    { path: '/admin/manager-scopes', label: t('nav.managerScopes'), icon: UsersIcon, hideInSimpleMode: true },
-    { path: '/admin/saturation', label: t('nav.saturation'), icon: ChartIcon, hideInSimpleMode: true },
+    {
+      path: '/admin/dept-insight',
+      label: t('nav.deptInsight'),
+      icon: UsersIcon,
+      hideInSimpleMode: true,
+      expandOnly: true,
+      children: [
+        { path: '/admin/manager-scopes', label: t('nav.managerScopes'), icon: UsersIcon },
+        { path: '/admin/saturation', label: t('nav.saturation'), icon: ChartIcon },
+        { path: '/admin/department-usage', label: t('nav.departmentUsage'), icon: ChartIcon },
+      ],
+    },
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon },
     {
       path: '/admin/channels',

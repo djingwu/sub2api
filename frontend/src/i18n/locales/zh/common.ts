@@ -218,6 +218,7 @@ export default {
     managerTeam: '部门团队',
     managerScopes: '经理部门范围',
     saturation: '用量饱和度',
+    deptInsight: '长视管理',
   },
 
   // Manager

@@ -218,6 +218,7 @@ export default {
     managerTeam: 'Department Team',
     managerScopes: 'Manager Scopes',
     saturation: 'User Saturation',
+    deptInsight: 'Dept Insights',
   },
 
   // Manager
