@@ -2,21 +2,17 @@
   <div class="space-y-6">
     <section class="relative overflow-hidden rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900 md:p-8">
       <div class="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-primary-500/10 blur-3xl"></div>
-      <div class="relative space-y-4">
-        <div class="lg:hidden">
-          <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ t('saturation.titleAdmin') }}
-          </h1>
-          <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-dark-400">
-            {{ t('saturation.descriptionAdmin') }}
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div class="inline-flex items-center gap-2 rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary-600 dark:text-primary-400">
+      <div class="relative flex flex-wrap items-start justify-between gap-4">
+        <div class="max-w-2xl">
+          <div class="mb-3 inline-flex items-center gap-2 rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary-600 dark:text-primary-400">
             <Icon name="chart" size="sm" />
             {{ t('saturation.badge') }}
           </div>
-          <div class="flex items-center gap-2">
+          <p class="text-sm leading-6 text-gray-500 dark:text-dark-400">
+            {{ t('saturation.descriptionAdmin') }}
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
             <button
               type="button"
               class="btn btn-secondary"

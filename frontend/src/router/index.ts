@@ -496,8 +496,7 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       title: 'User Saturation',
-      titleKey: 'saturation.titleAdmin',
-      descriptionKey: 'saturation.descriptionAdmin'
+      titleKey: 'saturation.titleAdmin'
     }
   },
   {
