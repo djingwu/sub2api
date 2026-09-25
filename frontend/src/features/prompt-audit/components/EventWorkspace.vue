@@ -98,7 +98,7 @@
           </tr>
         </tbody>
       </table>
-      <Pagination :total="total" :page="page" :page-size="pageSize" @update:page="$emit('page', $event)" @update:page-size="$emit('page-size', $event)" />
+      <Pagination :total="total" :page="page" :page-size="pageSize" @update:page="$emit('page', $event)" @update:pageSize="$emit('page-size', $event)" />
     </div>
   </section>
 </template>

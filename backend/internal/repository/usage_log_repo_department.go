@@ -519,14 +519,16 @@ func (r *usageLogRepository) GetDepartmentUsageSummaryWithFilters(ctx context.Co
 	departmentPredicate := departmentGroupPredicate(groupColumn, usagestats.DepartmentGroupScopeDepartment)
 	otherPredicate := departmentGroupPredicate(groupColumn, usagestats.DepartmentGroupScopeOther)
 
+	// FILTER must follow the aggregate directly: COALESCE(SUM(...), 0)
+	// FILTER (...) is a syntax error, so the bare SUM is wrapped instead.
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) FILTER (WHERE %[1]s) AS department_requests,
-			%[4]s FILTER (WHERE %[1]s) AS department_tokens,
+			COALESCE(%[4]s FILTER (WHERE %[1]s), 0) AS department_tokens,
 			COUNT(DISTINCT %[2]s) FILTER (WHERE %[1]s) AS department_groups,
 			COUNT(DISTINCT ul.user_id) FILTER (WHERE %[1]s) AS department_users,
 			COUNT(*) FILTER (WHERE %[3]s) AS other_requests,
-			%[4]s FILTER (WHERE %[3]s) AS other_tokens,
+			COALESCE(%[4]s FILTER (WHERE %[3]s), 0) AS other_tokens,
 			COUNT(DISTINCT %[2]s) FILTER (WHERE %[3]s) AS other_groups,
 			COUNT(DISTINCT ul.user_id) FILTER (WHERE %[3]s) AS other_users
 		FROM usage_logs ul
@@ -535,7 +537,7 @@ func (r *usageLogRepository) GetDepartmentUsageSummaryWithFilters(ctx context.Co
 		departmentPredicate,
 		groupColumn,
 		otherPredicate,
-		"COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0)",
+		"SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens)",
 	)
 
 	args := []any{startTime, endTime}

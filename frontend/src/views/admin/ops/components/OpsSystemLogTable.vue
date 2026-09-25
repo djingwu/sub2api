@@ -574,7 +574,7 @@ onMounted(async () => {
         :page="page"
         :page-size="pageSize"
         @update:page="onPageChange"
-        @update:page-size="onPageSizeChange"
+        @update:pageSize="onPageSizeChange"
       />
     </div>
   </section>

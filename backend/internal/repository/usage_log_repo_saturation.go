@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
@@ -15,7 +16,12 @@ func saturationUserPredicate(alias string, scopeUserIDs []int64, args []any) (st
 	if len(scopeUserIDs) == 0 {
 		return "", args
 	}
-	query := fmt.Sprintf(" AND %s.id = ANY($%d)", alias, len(args)+1)
+	// users 表主键是 id，usage_logs 表通过 user_id 关联用户。
+	column := "id"
+	if alias == "ul" {
+		column = "user_id"
+	}
+	query := fmt.Sprintf(" AND %s.%s = ANY($%d)", alias, column, len(args)+1)
 	args = append(args, pq.Array(scopeUserIDs))
 	return query, args
 }
@@ -92,12 +98,17 @@ func (r *usageLogRepository) GetSaturationUserAggregates(ctx context.Context, sc
 	results = make([]usagestats.SaturationUserAggregate, 0)
 	for rows.Next() {
 		var row usagestats.SaturationUserAggregate
+		var primaryDeptID sql.NullInt64
+		var windowStartedAt sql.NullTime
+		var expiresAt sql.NullTime
+		var firstUsedAt sql.NullTime
+		var lastUsedAt sql.NullTime
 		if err := rows.Scan(
 			&row.UserID,
 			&row.Email,
 			&row.Username,
 			&row.Status,
-			&row.PrimaryDeptID,
+			&primaryDeptID,
 			&row.DeptName,
 			&row.GroupNames,
 			&row.SubscriptionCount,
@@ -105,14 +116,34 @@ func (r *usageLogRepository) GetSaturationUserAggregates(ctx context.Context, sc
 			&row.UsedUSD,
 			&row.DailyUsedUSD,
 			&row.WeeklyUsedUSD,
-			&row.WindowStartedAt,
-			&row.ExpiresAt,
+			&windowStartedAt,
+			&expiresAt,
 			&row.LifetimeUsedUSD,
 			&row.LifetimeRequests,
-			&row.FirstUsedAt,
-			&row.LastUsedAt,
+			&firstUsedAt,
+			&lastUsedAt,
 		); err != nil {
 			return nil, err
+		}
+		if primaryDeptID.Valid {
+			deptID := primaryDeptID.Int64
+			row.PrimaryDeptID = &deptID
+		}
+		if windowStartedAt.Valid {
+			startedAt := windowStartedAt.Time
+			row.WindowStartedAt = &startedAt
+		}
+		if expiresAt.Valid {
+			expires := expiresAt.Time
+			row.ExpiresAt = &expires
+		}
+		if firstUsedAt.Valid {
+			firstUsed := firstUsedAt.Time
+			row.FirstUsedAt = &firstUsed
+		}
+		if lastUsedAt.Valid {
+			lastUsed := lastUsedAt.Time
+			row.LastUsedAt = &lastUsed
 		}
 		results = append(results, row)
 	}

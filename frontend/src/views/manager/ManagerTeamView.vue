@@ -31,7 +31,7 @@
           :description="t('manager.team.emptyDescription')"
         />
 
-        <div v-else class="space-y-6">
+        <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div
             v-for="member in members"
             :key="member.id"

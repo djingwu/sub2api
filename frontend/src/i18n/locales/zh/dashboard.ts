@@ -480,7 +480,7 @@ export default {
     insightClientFragmented: '客户端较分散：共 {count} 种，Top1 仅占 {share}',
   },
   saturation: {
-    badge: '用户用量饱和度',
+    badge: '订阅配额洞察',
     titleAdmin: '用户用量饱和度',
     descriptionAdmin: '按每月 600 美元订阅额度查看每位用户的用量饱和度、沉睡与重度分布，以及基准组合（性价比最优用法）的达标情况。累计口径取自用量日志，窗口刷新归零不会丢失历史。',
     loadFailed: '加载失败，请稍后重试',

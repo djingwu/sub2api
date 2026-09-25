@@ -358,7 +358,7 @@
             :total="usagesTotal"
             :page-size="usagesPageSize"
             @update:page="handleUsagesPageChange"
-            @update:page-size="(size: number) => { usagesPageSize = size; usagesPage = 1; loadUsages() }"
+            @update:pageSize="(size: number) => { usagesPageSize = size; usagesPage = 1; loadUsages() }"
           />
         </div>
       </div>

@@ -274,7 +274,7 @@
                     <span v-if="filters.sort === 'email'">{{ filters.order === 'asc' ? '↑' : '↓' }}</span>
                   </th>
                   <th class="px-3 py-2">{{ t('saturation.users.dept') }}</th>
-                  <th class="cursor-pointer px-3 py-2 text-right" @click="toggleSort('used_usd')">
+                  <th class="cursor-pointer px-3 py-2 text-right" @click="toggleSort('used_percent')">
                     {{ t('saturation.users.saturation') }}
                     <span v-if="filters.sort === 'used_percent' || filters.sort === 'used_usd'">{{ filters.order === 'asc' ? '↑' : '↓' }}</span>
                   </th>
@@ -376,7 +376,7 @@
               :page="filters.page"
               :page-size="filters.page_size"
               @update:page="onPageChange"
-              @update:page-size="onPageSizeChange"
+              @update:pageSize="onPageSizeChange"
             />
           </div>
         </template>

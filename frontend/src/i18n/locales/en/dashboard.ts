@@ -475,7 +475,7 @@ export default {
     insightClientFragmented: 'Client usage is fragmented: {count} clients in use, the top one only {share}',
   },
   saturation: {
-    badge: 'User Saturation',
+    badge: 'Subscription Insights',
     titleAdmin: 'User Saturation',
     descriptionAdmin: 'Per-user saturation against the $600/month subscription quota, dormant vs heavy users, and baseline-combination (best-value) compliance. Cumulative totals come from usage logs, so window resets never erase history.',
     loadFailed: 'Failed to load, please retry later',
