@@ -40,6 +40,53 @@ func ExtractBlockingPromptSnapshot(req Request, latestTurnOnly bool) (PromptSnap
 	return extractPromptSnapshot(req, latestTurnOnly)
 }
 
+// ExtractLatestUserInput builds a snapshot containing only the latest user
+// turn, without system instructions, history, or assistant/tool output. It is
+// intended for input-only file logging where context accumulation must not be
+// recorded.
+func ExtractLatestUserInput(req Request) (PromptSnapshot, error) {
+	var document any
+	if err := json.Unmarshal(req.Body, &document); err != nil {
+		return PromptSnapshot{}, errors.New("prompt audit request JSON is invalid")
+	}
+	extracted := extractProtocolSegments(req.Protocol, document)
+	normalized := normalizedPromptSegments(extracted)
+	if len(normalized) == 0 {
+		return PromptSnapshot{}, ErrNoPromptText
+	}
+	start := latestUserSegmentStart(normalized)
+	if start < 0 {
+		return PromptSnapshot{}, ErrNoPromptText
+	}
+	end := start
+	for end < len(normalized) && isUserSegment(normalized[end]) {
+		end++
+	}
+	parts := make([]string, 0, end-start)
+	for _, segment := range normalized[start:end] {
+		parts = append(parts, segment.text)
+	}
+	text := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	if text == "" {
+		return PromptSnapshot{}, ErrNoPromptText
+	}
+	digest := sha256.Sum256([]byte(text))
+	stage := strings.TrimSpace(req.Stage)
+	if stage == "" {
+		stage = "http"
+	}
+	return PromptSnapshot{
+		RequestID: req.RequestID, UserID: req.UserID, UsernameSnapshot: req.Username,
+		UserEmailSnapshot: req.UserEmail, APIKeyID: req.APIKeyID, APIKeyNameSnapshot: req.APIKeyName,
+		GroupID: cloneInt64Ptr(req.GroupID), GroupName: req.GroupName, Provider: req.Provider,
+		Endpoint: req.Endpoint, Protocol: req.Protocol, Model: req.Model,
+		PromptHash:      hex.EncodeToString(digest[:]),
+		RedactedPreview: BuildPromptPreview(text, DefaultPromptPreviewMaxRunes),
+		FullPrompt:      BuildFullPrompt(text, DefaultFullPromptMaxRunes),
+		PromptLength:    utf8.RuneCountInString(text), MessageCount: end - start, Stage: stage,
+	}, nil
+}
+
 func extractPromptSnapshot(req Request, latestTurnOnly bool) (PromptSnapshot, error) {
 	var document any
 	if err := json.Unmarshal(req.Body, &document); err != nil {

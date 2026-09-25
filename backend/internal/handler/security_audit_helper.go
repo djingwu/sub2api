@@ -2,9 +2,13 @@ package handler
 
 import (
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -75,6 +79,15 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			return nil
 		}
 	}
+	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
+	// Prompt-input file log: input only, never the upstream return.
+	// Independent of audit config; original prompt-audit flow is untouched.
+	// Placed after the HTTP completion-cache check above so one HTTP request
+	// logs once, but before coordinator branching so legacy/coordinator-off
+	// traffic is still logged.
+	if !isPromptInputLoggedDuplicate(c, request, body) {
+		logPromptInput(request)
+	}
 	if coordinator == nil {
 		legacyDecision := runContentModeration(c, reqLog, legacy, apiKey, subject, protocol, model, body)
 		if legacyDecision == nil {
@@ -94,7 +107,6 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		}
 		return &decision
 	}
-	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
 	if isSecurityAuditWebSocketStage(request.Stage) {
 		if turnNo, ok := securityAuditWSTurn(c); ok {
 			bodyHash := sha256.Sum256(body)
@@ -124,6 +136,95 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 	}
 	logSecurityAuditDone(reqLog, request, decision, false)
 	return &decision
+}
+
+const promptInputLoggedContextKey = "sub2api.prompt_input.logged"
+
+// promptInputLoggedEntry dedupes the input-only file log per gin request or
+// per WebSocket turn, mirroring the audit completion/WS caches above.
+type promptInputLoggedEntry struct {
+	stage    string
+	turn     int
+	hasTurn  bool
+	bodyHash [sha256.Size]byte
+}
+
+// isPromptInputLoggedDuplicate reports whether this exact input was already
+// logged, and records it when first seen.
+func isPromptInputLoggedDuplicate(c *gin.Context, request securityaudit.Request, body []byte) bool {
+	if c == nil {
+		return false
+	}
+	entry := promptInputLoggedEntry{stage: request.Stage, bodyHash: sha256.Sum256(body)}
+	if turn, ok := securityAuditWSTurn(c); ok {
+		entry.turn, entry.hasTurn = turn, true
+	}
+	if cached, exists := c.Get(promptInputLoggedContextKey); exists {
+		if prev, ok := cached.(promptInputLoggedEntry); ok && prev == entry {
+			return true
+		}
+	}
+	c.Set(promptInputLoggedContextKey, entry)
+	return false
+}
+
+// logPromptInput writes the input-only prompt log to the dedicated daily
+// file (<logdir>/prompt-input-YYYY-MM-DD.log, one JSON object per line).
+// Only the latest user turn is recorded: no system instructions, no history,
+// no assistant/tool output. It never touches the upstream response, never
+// writes prompt_audit tables, and never enters the ops DB sink.
+func logPromptInput(request securityaudit.Request) {
+	snapshot, err := securityaudit.ExtractLatestUserInput(request)
+	if err != nil {
+		if errors.Is(err, securityaudit.ErrNoPromptText) {
+			return
+		}
+		logger.L().Warn("prompt_input.extract_failed",
+			zap.String("component", "prompt_input"),
+			zap.String("request_id", request.RequestID),
+			zap.Int64("user_id", request.UserID),
+			zap.Int64("api_key_id", request.APIKeyID),
+			zap.Bool(logger.OpsSystemLogSkipField, true),
+		)
+		return
+	}
+	record := map[string]any{
+		"time":          time.Now().UTC().Format(time.RFC3339Nano),
+		"component":     "prompt_input",
+		"request_id":    request.RequestID,
+		"user_id":       request.UserID,
+		"username":      request.Username,
+		"api_key_id":    request.APIKeyID,
+		"api_key_name":  request.APIKeyName,
+		"group_id":      request.GroupID,
+		"group_name":    request.GroupName,
+		"endpoint":      request.Endpoint,
+		"provider":      request.Provider,
+		"protocol":      request.Protocol,
+		"model":         request.Model,
+		"stage":         snapshot.Stage,
+		"prompt_hash":   snapshot.PromptHash,
+		"prompt_length": snapshot.PromptLength,
+		"message_count": snapshot.MessageCount,
+		"prompt":        snapshot.FullPrompt,
+	}
+	line, err := json.Marshal(record)
+	if err != nil {
+		logger.L().Warn("prompt_input.encode_failed",
+			zap.String("component", "prompt_input"),
+			zap.String("request_id", request.RequestID),
+			zap.Bool(logger.OpsSystemLogSkipField, true),
+		)
+		return
+	}
+	if err := logger.AppendPromptInputLine(line); err != nil {
+		logger.L().Warn("prompt_input.write_failed",
+			zap.String("component", "prompt_input"),
+			zap.String("request_id", request.RequestID),
+			zap.String("file", logger.PromptInputFilename()),
+			zap.Bool(logger.OpsSystemLogSkipField, true),
+		)
+	}
 }
 
 func logSecurityAuditStart(reqLog *zap.Logger, request securityaudit.Request, bodyBytes int, cached bool) {
