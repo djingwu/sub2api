@@ -25,7 +25,6 @@
               <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
               <span class="hidden sm:inline">{{ t('common.refresh') }}</span>
             </button>
-          </div>
         </div>
       </div>
     </section>
@@ -119,8 +118,8 @@
               :key="combo.model + ':' + combo.effort"
               class="inline-flex items-center gap-1 rounded-full bg-primary-500/10 px-3 py-1 text-xs font-medium text-primary-600 dark:text-primary-400"
             >
-              {{ combo.model }}
-              <span class="text-primary-400 dark:text-primary-500">/{{ combo.effort }}</span>
+                    {{ combo.model }}
+                    <span class="text-primary-400 dark:text-primary-500">/{{ effortLabel(combo.effort) }}</span>
             </span>
             <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500 dark:bg-dark-800 dark:text-dark-400">
               {{ t('saturation.baseline.threshold', { value: snapshot.config.threshold_percent }) }}
@@ -201,7 +200,7 @@
                     </span>
                   </div>
                 </td>
-                <td class="px-3 py-2.5 text-gray-500 dark:text-dark-400">{{ combo.effort }}</td>
+                <td class="px-3 py-2.5 text-gray-500 dark:text-dark-400">{{ effortLabel(combo.effort) }}</td>
                 <td class="px-3 py-2.5 text-right text-gray-600 dark:text-dark-300">{{ formatNumber(combo.requests) }}</td>
                 <td class="px-3 py-2.5 text-right text-gray-600 dark:text-dark-300">{{ formatCompactNumber(combo.tokens) }}</td>
                 <td class="px-3 py-2.5 text-right text-gray-600 dark:text-dark-300">{{ fmtUsd(combo.cost_usd) }}</td>
@@ -302,8 +301,7 @@
                   class="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 dark:border-dark-800 dark:hover:bg-dark-800/40"
                 >
                   <td class="px-3 py-2.5">
-                    <div class="font-medium text-gray-900 dark:text-white">{{ user.username || user.email }}</div>
-                    <div class="text-xs text-gray-400 dark:text-dark-500">{{ user.email }}</div>
+                    <div class="font-medium text-gray-900 dark:text-white">{{ user.email }}</div>
                   </td>
                   <td class="px-3 py-2.5 text-gray-500 dark:text-dark-400">
                     {{ user.dept_name || '—' }}
@@ -345,7 +343,7 @@
                   <td class="px-3 py-2.5 text-gray-500 dark:text-dark-400">
                     <template v-if="user.top_model">
                       {{ user.top_model }}
-                      <span class="text-gray-400 dark:text-dark-500">/{{ user.top_effort }}</span>
+                      <span class="text-gray-400 dark:text-dark-500">/{{ effortLabel(user.top_effort) }}</span>
                     </template>
                     <template v-else>—</template>
                   </td>
@@ -509,6 +507,11 @@ function fmtUsd(value: number | null | undefined): string {
 function saturationPercent(used: number, quota: number): number {
   if (!quota) return 0
   return (used / quota) * 100
+}
+
+function effortLabel(effort: string | undefined): string {
+  if (!effort || effort === 'unspecified') return t('departmentUsage.reasoningUnspecified')
+  return effort
 }
 
 function clampedWidth(value: number | null | undefined): string {
