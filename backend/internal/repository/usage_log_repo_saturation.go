@@ -159,12 +159,13 @@ func (r *usageLogRepository) GetSaturationUserAggregates(ctx context.Context, sc
 // subscription's monthly_window_start so resets take effect immediately.
 func (r *usageLogRepository) GetSaturationUserCombos(ctx context.Context, scopeUserIDs []int64) (results []usagestats.SaturationUserCombo, err error) {
 	modelExpr := resolveModelDimensionExpressionWithAlias(usagestats.ModelSourceRequested, "ul")
+	effortExpr := `COALESCE(NULLIF(TRIM(ul.requested_reasoning_effort), ''), NULLIF(TRIM(ul.reasoning_effort), ''), 'unspecified')`
 
 	query := fmt.Sprintf(`
 		SELECT
 			ul.user_id,
 			%s AS model,
-			COALESCE(NULLIF(TRIM(ul.requested_reasoning_effort), ''), NULLIF(TRIM(ul.reasoning_effort), ''), 'unspecified') AS effort,
+			%s AS effort,
 			COUNT(*) AS requests,
 			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) AS tokens,
 			COALESCE(SUM(ul.actual_cost), 0) AS cost_usd
@@ -178,12 +179,16 @@ func (r *usageLogRepository) GetSaturationUserCombos(ctx context.Context, scopeU
 			AND g.deleted_at IS NULL
 			AND g.monthly_limit_usd > 0
 		WHERE ul.created_at >= us.monthly_window_start
-			AND ul.actual_cost > 0`, modelExpr)
+			AND ul.actual_cost > 0`, modelExpr, effortExpr)
 
 	args := []any{}
 	filter, args := saturationUserPredicate("ul", scopeUserIDs, args)
 	query += filter
-	query += " GROUP BY ul.user_id, model, effort ORDER BY ul.user_id ASC, tokens DESC"
+	// NOTE: GROUP BY 必须重复完整的表达式文本，不能写别名 model。
+	// PostgreSQL 在输入列与输出别名同名时优先解析为输入列，
+	// GROUP BY model 会被解析成 ul.model，导致 SELECT 里的
+	// ul.requested_model 报 "must appear in the GROUP BY clause" 500。
+	query += fmt.Sprintf(" GROUP BY ul.user_id, %s, %s ORDER BY ul.user_id ASC, tokens DESC", modelExpr, effortExpr)
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
 	if err != nil {
