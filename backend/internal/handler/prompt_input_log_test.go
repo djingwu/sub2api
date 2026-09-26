@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -56,7 +57,7 @@ func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 	defer logger.ClosePromptInputFile()
 
 	logPromptInput(securityaudit.Request{
-		RequestID: "req-daily", UserID: 7, APIKeyID: 9, Protocol: "openai_chat_completions",
+		RequestID: "req-daily", UserID: 7, Username: "董经武", APIKeyID: 9, Protocol: "openai_chat_completions",
 		Model: "gpt-test", Stage: "http",
 		Body: []byte(`{"model":"gpt-test","messages":[
 			{"role":"system","content":"system instruction"},
@@ -65,15 +66,18 @@ func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 			{"role":"user","content":"latest user input"}
 		]}`),
 	})
+	logPromptInput(securityaudit.Request{
+		RequestID: "req-daily-2", UserID: 8, Username: "李泽阳", APIKeyID: 10, Protocol: "openai_chat_completions",
+		Model: "gpt-test", Stage: "http",
+		Body: []byte(`{"model":"gpt-test","messages":[{"role":"user","content":"li input"}]}`),
+	})
 	logger.ClosePromptInputFile()
 
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	require.True(t, strings.HasPrefix(entries[0].Name(), "prompt-input-"))
-	require.True(t, strings.HasSuffix(entries[0].Name(), ".log"))
+	require.Len(t, entries, 2)
 
-	raw, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	raw, err := os.ReadFile(filepath.Join(dir, "董经武", time.Now().Format("2006-01-02")+".log"))
 	require.NoError(t, err)
 	line := strings.TrimSpace(string(raw))
 	require.Contains(t, line, `"latest user input"`)
@@ -81,6 +85,19 @@ func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 	require.NotContains(t, line, "older assistant output")
 	require.NotContains(t, line, "system instruction")
 	require.Contains(t, line, `"user_id":7`)
+
+	raw, err = os.ReadFile(filepath.Join(dir, "李泽阳", time.Now().Format("2006-01-02")+".log"))
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(string(raw)), `"li input"`)
+}
+
+func TestSanitizePromptInputUsername(t *testing.T) {
+	require.Equal(t, "董经武", logger.SanitizePromptInputUsername("董经武", 2))
+	require.Equal(t, "a_b", logger.SanitizePromptInputUsername("a/b", 2))
+	require.Equal(t, "a_b", logger.SanitizePromptInputUsername(`a\b`, 2))
+	require.Equal(t, "unknown-user-9", logger.SanitizePromptInputUsername("", 9))
+	require.Equal(t, "unknown", logger.SanitizePromptInputUsername("  ", 0))
+	require.Equal(t, "unknown", logger.SanitizePromptInputUsername("..", 0))
 }
 
 func TestExtractLatestUserInputKeepsOnlyLatestUserTurn(t *testing.T) {

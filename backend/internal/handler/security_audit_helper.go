@@ -168,8 +168,8 @@ func isPromptInputLoggedDuplicate(c *gin.Context, request securityaudit.Request,
 	return false
 }
 
-// logPromptInput writes the input-only prompt log to the dedicated daily
-// file (<logdir>/prompt-input-YYYY-MM-DD.log, one JSON object per line).
+// logPromptInput writes the input-only prompt log to the per-user dedicated
+// daily file (<logdir>/<username>/YYYY-MM-DD.log, one JSON object per line).
 // Only the latest user turn is recorded: no system instructions, no history,
 // no assistant/tool output. It never touches the upstream response, never
 // writes prompt_audit tables, and never enters the ops DB sink.
@@ -217,11 +217,11 @@ func logPromptInput(request securityaudit.Request) {
 		)
 		return
 	}
-	if err := logger.AppendPromptInputLine(line); err != nil {
+	if err := logger.AppendPromptInputLineForUser(request.Username, request.UserID, line); err != nil {
 		logger.L().Warn("prompt_input.write_failed",
 			zap.String("component", "prompt_input"),
 			zap.String("request_id", request.RequestID),
-			zap.String("file", logger.PromptInputFilename()),
+			zap.String("username", request.Username),
 			zap.Bool(logger.OpsSystemLogSkipField, true),
 		)
 	}
