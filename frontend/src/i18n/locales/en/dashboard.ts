@@ -406,7 +406,7 @@ export default {
     reasoningModelsTitle: 'Share by model',
     reasoningTrendTitle: 'Trend over time',
     reasoningTotalRequests: '{count} requests',
-    reasoningUnspecified: 'Unspecified',
+    reasoningUnspecified: 'Default',
     reasoningFilterByDepartment: 'View this department\u2019s reasoning effort mix',
     reasoningEmpty: 'No reasoning-effort data in the selected range',
     reasoningLoadFailed: 'Failed to load the reasoning effort report',

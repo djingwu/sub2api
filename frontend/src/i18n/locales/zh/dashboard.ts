@@ -411,7 +411,7 @@ export default {
     reasoningModelsTitle: '按模型占比',
     reasoningTrendTitle: '时间趋势',
     reasoningTotalRequests: '{count} 请求',
-    reasoningUnspecified: '未指定',
+    reasoningUnspecified: '默认',
     reasoningFilterByDepartment: '查看该部门的思考模式占比',
     reasoningEmpty: '所选时间范围内暂无思考模式数据',
     reasoningLoadFailed: '加载思考模式报表失败',

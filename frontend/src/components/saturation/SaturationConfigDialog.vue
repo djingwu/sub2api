@@ -38,7 +38,7 @@
             <div class="w-32">
               <select v-model="combo.effort" class="input">
                 <option v-for="effort in effortOptions" :key="effort" :value="effort">
-                  {{ effort }}
+                  {{ effortOptionLabel(effort) }}
                 </option>
               </select>
             </div>
@@ -120,6 +120,11 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const effortOptions = ['max', 'high', 'medium', 'low', 'xhigh', 'unspecified']
+
+function effortOptionLabel(effort: string): string {
+  if (effort === 'unspecified') return t('departmentUsage.reasoningUnspecified')
+  return effort
+}
 const draftCombos = ref<SaturationBaselineCombo[]>([])
 const draftThreshold = ref(50)
 const saving = ref(false)
