@@ -80,15 +80,11 @@ func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(dir, "董经武", time.Now().Format("2006-01-02")+".log"))
 	require.NoError(t, err)
 	line := strings.TrimSpace(string(raw))
-	require.Contains(t, line, `"latest user input"`)
-	require.NotContains(t, line, "older user input")
-	require.NotContains(t, line, "older assistant output")
-	require.NotContains(t, line, "system instruction")
-	require.Contains(t, line, `"user_id":7`)
+	require.Equal(t, `{"model":"gpt-test","prompt":"latest user input"}`, line)
 
 	raw, err = os.ReadFile(filepath.Join(dir, "李泽阳", time.Now().Format("2006-01-02")+".log"))
 	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(string(raw)), `"li input"`)
+	require.Equal(t, `{"model":"gpt-test","prompt":"li input"}`, strings.TrimSpace(string(raw)))
 }
 
 func TestSanitizePromptInputUsername(t *testing.T) {

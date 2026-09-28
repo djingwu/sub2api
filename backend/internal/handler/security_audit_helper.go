@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -189,24 +188,8 @@ func logPromptInput(request securityaudit.Request) {
 		return
 	}
 	record := map[string]any{
-		"time":          time.Now().UTC().Format(time.RFC3339Nano),
-		"component":     "prompt_input",
-		"request_id":    request.RequestID,
-		"user_id":       request.UserID,
-		"username":      request.Username,
-		"api_key_id":    request.APIKeyID,
-		"api_key_name":  request.APIKeyName,
-		"group_id":      request.GroupID,
-		"group_name":    request.GroupName,
-		"endpoint":      request.Endpoint,
-		"provider":      request.Provider,
-		"protocol":      request.Protocol,
-		"model":         request.Model,
-		"stage":         snapshot.Stage,
-		"prompt_hash":   snapshot.PromptHash,
-		"prompt_length": snapshot.PromptLength,
-		"message_count": snapshot.MessageCount,
-		"prompt":        snapshot.FullPrompt,
+		"model":  request.Model,
+		"prompt": snapshot.FullPrompt,
 	}
 	line, err := json.Marshal(record)
 	if err != nil {
