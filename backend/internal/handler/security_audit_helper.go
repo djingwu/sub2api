@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -139,6 +142,55 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 
 const promptInputLoggedContextKey = "sub2api.prompt_input.logged"
 
+// promptInputCrossRequestDedup suppresses repeat logging of the same
+// (user, prompt-hash) within a short window: coding clients retry/poll
+// with identical input and each attempt would otherwise append a
+// duplicate line. Bounded map with lazy expiry; best-effort only.
+const promptInputDedupWindow = 10 * time.Minute
+
+const maxPromptInputDedupEntries = 4096
+
+var (
+	promptInputDedupMu      sync.Mutex
+	promptInputDedupEntries = map[string]time.Time{}
+)
+
+// isPromptInputCrossRequestDuplicate reports whether the same user already
+// logged the same prompt hash within the dedup window. It records the
+// first sighting and lazily expires/evicts entries to bound memory.
+func isPromptInputCrossRequestDuplicate(userID int64, username, promptHash string) bool {
+	if promptHash == "" {
+		return false
+	}
+	key := username + "\x00" + promptHash
+	if userID > 0 {
+		key = strconv.FormatInt(userID, 10) + "\x00" + key
+	}
+	now := time.Now()
+	promptInputDedupMu.Lock()
+	defer promptInputDedupMu.Unlock()
+	if last, ok := promptInputDedupEntries[key]; ok {
+		if now.Sub(last) < promptInputDedupWindow {
+			return true
+		}
+	}
+	// Lazy expiry + bound: drop stale entries, and if still over the
+	// cap, evict an arbitrary old entry.
+	for k, last := range promptInputDedupEntries {
+		if now.Sub(last) >= promptInputDedupWindow {
+			delete(promptInputDedupEntries, k)
+		}
+	}
+	if len(promptInputDedupEntries) >= maxPromptInputDedupEntries {
+		for k := range promptInputDedupEntries {
+			delete(promptInputDedupEntries, k)
+			break
+		}
+	}
+	promptInputDedupEntries[key] = now
+	return false
+}
+
 // promptInputLoggedEntry dedupes the input-only file log per gin request or
 // per WebSocket turn, mirroring the audit completion/WS caches above.
 type promptInputLoggedEntry struct {
@@ -185,6 +237,12 @@ func logPromptInput(request securityaudit.Request) {
 			zap.Int64("api_key_id", request.APIKeyID),
 			zap.Bool(logger.OpsSystemLogSkipField, true),
 		)
+		return
+	}
+	// Cross-request dedup: identical (user, prompt-hash) within the window
+	// is logged once. Snapshot hash is over the stripped text so retries
+	// differing only in harness metadata still collapse.
+	if isPromptInputCrossRequestDuplicate(request.UserID, request.Username, snapshot.PromptHash) {
 		return
 	}
 	record := map[string]any{

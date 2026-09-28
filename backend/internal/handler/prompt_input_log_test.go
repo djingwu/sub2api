@@ -15,6 +15,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMain redirects the prompt-input daily file to a temp dir for the
+// whole handler package: runSecurityAudit paths in other test files would
+// otherwise append to the production log directory during go test.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "prompt-input-test-*")
+	if err == nil {
+		logger.SetPromptInputDirOverride(dir)
+	}
+	code := m.Run()
+	logger.ClosePromptInputFile()
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
+	os.Exit(code)
+}
+
 func TestPromptInputLogDedupesSameBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -31,8 +47,9 @@ func TestPromptInputLogDedupesSameBody(t *testing.T) {
 
 func TestLogPromptInputNeverPanics(t *testing.T) {
 	dir := t.TempDir()
+	prev := logger.PromptInputLogDir()
 	logger.SetPromptInputDirOverride(dir)
-	defer logger.SetPromptInputDirOverride("")
+	defer logger.SetPromptInputDirOverride(prev)
 	defer logger.ClosePromptInputFile()
 
 	require.NotPanics(t, func() {
@@ -53,7 +70,6 @@ func TestLogPromptInputNeverPanics(t *testing.T) {
 func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 	dir := t.TempDir()
 	logger.SetPromptInputDirOverride(dir)
-	defer logger.SetPromptInputDirOverride("")
 	defer logger.ClosePromptInputFile()
 
 	logPromptInput(securityaudit.Request{
@@ -63,7 +79,7 @@ func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 			{"role":"system","content":"system instruction"},
 			{"role":"user","content":"older user input"},
 			{"role":"assistant","content":"older assistant output"},
-			{"role":"user","content":"latest user input"}
+			{"role":"user","content":"<environment_context><cwd>/tmp</cwd></environment_context>latest user input"}
 		]}`),
 	})
 	logPromptInput(securityaudit.Request{
@@ -85,6 +101,31 @@ func TestLogPromptInputWritesDailyFileWithLatestUserTurnOnly(t *testing.T) {
 	raw, err = os.ReadFile(filepath.Join(dir, "李泽阳", time.Now().Format("2006-01-02")+".log"))
 	require.NoError(t, err)
 	require.Equal(t, `{"model":"gpt-test","prompt":"li input"}`, strings.TrimSpace(string(raw)))
+
+	// Same user + same stripped prompt within the window is logged once.
+	before, err := os.ReadFile(filepath.Join(dir, "董经武", time.Now().Format("2006-01-02")+".log"))
+	require.NoError(t, err)
+	logPromptInput(securityaudit.Request{
+		RequestID: "req-daily-dup", UserID: 7, Username: "董经武", APIKeyID: 9, Protocol: "openai_chat_completions",
+		Model: "gpt-test", Stage: "http",
+		Body: []byte(`{"model":"gpt-test","messages":[{"role":"user","content":"<system-reminder>retry</system-reminder>latest user input"}]}`),
+	})
+	logger.ClosePromptInputFile()
+	after, err := os.ReadFile(filepath.Join(dir, "董经武", time.Now().Format("2006-01-02")+".log"))
+	require.NoError(t, err)
+	require.Equal(t, string(before), string(after))
+}
+
+func TestStripHarnessBlocks(t *testing.T) {
+	got := securityaudit.StripHarnessBlocks("<environment_context><cwd>/tmp</cwd></environment_context>\n\nreal question\n<system-reminder>x</system-reminder>")
+	require.Equal(t, "real question", got)
+	got = securityaudit.StripHarnessBlocks("<user>wrapped question</user>")
+	require.Equal(t, "wrapped question", got)
+	got = securityaudit.StripHarnessBlocks("<INSTRUCTIONS>harness</INSTRUCTIONS>\n\nkeep me")
+	require.Equal(t, "keep me", got)
+	require.Equal(t, "", securityaudit.StripHarnessBlocks("<environment_context><cwd>/tmp</cwd></environment_context>"))
+	got = securityaudit.StripHarnessBlocks("<chat><user>real question</user><assistant><think>model thought</think>model answer</assistant></chat>")
+	require.Equal(t, "real question", got)
 }
 
 func TestSanitizePromptInputUsername(t *testing.T) {

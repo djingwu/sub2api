@@ -19,7 +19,52 @@ var (
 	canaryPattern = regexp.MustCompile(`(?i)([A-Z]+_CANARY_)[A-Za-z0-9_-]+`)
 	emailPattern  = regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)
 	phonePattern  = regexp.MustCompile(`(?:\+?\d[\d\s().-]{8,}\d)`)
+
+	// Harness blocks injected by coding clients (Codex env context,
+	// IDE environment details, reminder banners). They are machine
+	// metadata, not the user's question, so the input-only file log
+	// strips them. Paired blocks are removed whole; the audit snapshot
+	// path is untouched.
+	harnessPairedBlockPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?is)<environment_context\b[^>]*>.*?</environment_context\s*>`),
+		regexp.MustCompile(`(?is)<environment_details\b[^>]*>.*?</environment_details\s*>`),
+		regexp.MustCompile(`(?is)<system-reminder\b[^>]*>.*?</system-reminder\s*>`),
+		regexp.MustCompile(`(?is)<system-notice\b[^>]*>.*?</system-notice\s*>`),
+		regexp.MustCompile(`(?is)<additional_data\b[^>]*>.*?</additional_data\s*>`),
+		regexp.MustCompile(`(?is)<guardian_tool_descriptions\b[^>]*>.*?</guardian_tool_descriptions\s*>`),
+		regexp.MustCompile(`(?is)<instructions\b[^>]*>.*?</instructions\s*>`),
+		// Model output embedded in user-pasted transcripts (<chat> wrappers
+		// from some clients). Not the user's question: drop whole.
+		regexp.MustCompile(`(?is)<assistant\b[^>]*>.*?</assistant\s*>`),
+		regexp.MustCompile(`(?is)<think\b[^>]*>.*?</think\s*>`),
+	}
+	// Lone assistant/think markers left by truncated client payloads: strip
+	// the markers themselves, keeping surrounding text (unlike the paired
+	// blocks above, we must not delete to end-of-text and risk user content).
+	harnessLoneMarkerPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)</?assistant\b[^>]*>`),
+		regexp.MustCompile(`(?i)</?think\b[^>]*>`),
+	}
+	// Standalone wrapper tags whose content IS the user question
+	// (<user>, <user_query>, <chat>) are unwrapped, not deleted.
+	harnessUnwrapTagNames = []string{"user", "user_query", "chat"}
+
+	harnessUnwrapOpenPatterns  = buildHarnessUnwrapPatterns(true)
+	harnessUnwrapClosePatterns = buildHarnessUnwrapPatterns(false)
+	harnessBlankCollapse       = regexp.MustCompile(`\n[ \t]*\n[ \t]*\n+`)
 )
+
+func buildHarnessUnwrapPatterns(open bool) []*regexp.Regexp {
+	patterns := make([]*regexp.Regexp, 0, len(harnessUnwrapTagNames))
+	for _, name := range harnessUnwrapTagNames {
+		if open {
+			patterns = append(patterns, regexp.MustCompile(`(?i)<`+name+`\b[^>]*>`))
+		} else {
+			patterns = append(patterns, regexp.MustCompile(`(?i)</`+name+`\s*>`))
+		}
+	}
+	return patterns
+}
 
 const promptAuditPrioritySeparator = "\x00SUB2API_PROMPT_AUDIT_PRIORITY_END\x00"
 
@@ -66,7 +111,7 @@ func ExtractLatestUserInput(req Request) (PromptSnapshot, error) {
 	for _, segment := range normalized[start:end] {
 		parts = append(parts, segment.text)
 	}
-	text := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	text := StripHarnessBlocks(strings.Join(parts, "\n\n"))
 	if text == "" {
 		return PromptSnapshot{}, ErrNoPromptText
 	}
@@ -660,6 +705,32 @@ func BuildPromptPreview(value string, maxRunes int) string {
 		preview += "…"
 	}
 	return preview
+}
+
+// StripHarnessBlocks removes client-injected machine metadata blocks
+// (environment context, reminders, tool descriptions) from a user-turn
+// text, keeping the human question. Wrapper tags whose content is the
+// question itself (<user>, <user_query>, <chat>) are unwrapped. Returns
+// the trimmed remainder, possibly empty.
+func StripHarnessBlocks(text string) string {
+	for _, pattern := range harnessPairedBlockPatterns {
+		if pattern == nil {
+			continue
+		}
+		text = pattern.ReplaceAllString(text, "")
+	}
+	for _, marker := range harnessLoneMarkerPatterns {
+		text = marker.ReplaceAllString(text, "")
+	}
+	for _, open := range harnessUnwrapOpenPatterns {
+		text = open.ReplaceAllString(text, "")
+	}
+	for _, close := range harnessUnwrapClosePatterns {
+		text = close.ReplaceAllString(text, "")
+	}
+	// Collapse 3+ consecutive blank lines left by block removal.
+	text = harnessBlankCollapse.ReplaceAllString(text, "\n\n")
+	return strings.TrimSpace(text)
 }
 
 // BuildFullPrompt returns the complete prompt text for audit-event storage and

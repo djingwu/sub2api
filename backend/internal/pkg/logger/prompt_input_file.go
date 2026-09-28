@@ -113,44 +113,9 @@ func PromptInputUserDir(username string, userID int64) string {
 	return filepath.Join(PromptInputLogDir(), SanitizePromptInputUsername(username, userID))
 }
 
-// PromptInputFilename returns the full path of today's daily file.
-// Deprecated: per-user layout is used instead; kept for compatibility.
-func PromptInputFilename() string {
-	return PromptInputFilenameForDate(time.Now())
-}
-
-// PromptInputFilenameForDate returns the legacy flat daily file path.
-// Deprecated: per-user layout is used instead; kept for compatibility.
-func PromptInputFilenameForDate(t time.Time) string {
-	return filepath.Join(PromptInputLogDir(), promptInputFilenamePrefix+t.Format("2006-01-02")+".log")
-}
-
 // PromptInputFilenameForUser returns <logdir>/<username>/YYYY-MM-DD.log.
 func PromptInputFilenameForUser(username string, userID int64, t time.Time) string {
 	return filepath.Join(PromptInputUserDir(username, userID), t.Format("2006-01-02")+".log")
-}
-
-// AppendPromptInputLine appends one JSON line to the legacy flat daily
-// file. It is kept for compatibility; new code should use
-// AppendPromptInputLineForUser.
-func AppendPromptInputLine(line []byte) error {
-	if len(line) == 0 {
-		return nil
-	}
-	// Resolve everything needing other locks before taking promptInputMu.
-	path := PromptInputFilename()
-	dir := filepath.Dir(path)
-	retention := promptInputRetentionDays()
-	base := PromptInputLogDir()
-
-	promptInputMu.Lock()
-	defer promptInputMu.Unlock()
-	f, err := openPromptInputFileLocked(path, dir)
-	if err != nil {
-		return err
-	}
-	purgeOldPromptInputFiles(base, retention)
-	return writePromptInputLine(f, line)
 }
 
 // AppendPromptInputLineForUser appends one JSON line (without trailing
